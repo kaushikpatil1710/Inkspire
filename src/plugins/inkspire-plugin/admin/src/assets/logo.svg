@@ -1,0 +1,14 @@
+<svg width="300" height="200" viewBox="0 0 300 200" xmlns="http://www.w3.org/2000/svg">
+  <!-- Quill Icon -->
+  <path d="M150 40 C160 20, 190 20, 200 40 C210 60, 190 80, 170 70 C160 65, 155 55, 150 40 Z" fill="black"/>
+  
+  <!-- Brand Name -->
+  <text x="150" y="120" font-family="Arial, sans-serif" font-size="24" font-weight="bold" text-anchor="middle" fill="black">
+    INKSPIRE
+  </text>
+  
+  <!-- Tagline -->
+  <text x="150" y="150" font-family="Arial, sans-serif" font-size="14" text-anchor="middle" fill="black">
+    Ink your thoughts
+  </text>
+</svg>

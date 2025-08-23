@@ -1,0 +1,10 @@
+.buttonnnn {
+    padding: 0.6em 1.2em;
+    border: none;
+    outline: none; 
+    color: #fff;
+    background: #111;
+    cursor: pointer;
+    border-radius: 6;
+    font-size: 14px;
+}
