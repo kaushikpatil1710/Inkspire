@@ -1,61 +1,110 @@
-# 🚀 Getting started with Strapi
+Inkspire — Custom Rich Text Editor for Strapi
 
-Strapi comes with a full featured [Command Line Interface](https://docs.strapi.io/dev-docs/cli) (CLI) which lets you scaffold and manage your project in seconds.
+Inkspire is a lightweight, extensible rich text editor plugin for Strapi.
+It provides a clean WYSIWYG experience with JSON-based output, built to integrate seamlessly into Strapi’s Content-Type Builder.
 
-### `develop`
+✨ Features
 
-Start your Strapi application with autoReload enabled. [Learn more](https://docs.strapi.io/dev-docs/cli#strapi-develop)
+Custom Field Integration: Add Inkspire as a field type in your Strapi collection types.
 
-```
+Core Formatting: Bold, italic, headers, lists.
+
+Preview Mode: Live preview synced with editor content.
+
+State Management: Centralized React state for stable content flow (editor → preview → database → reload).
+
+Scoped Styling: Styles isolated from Strapi’s admin theme.
+
+Persistence: Content stored as structured JSON, ensuring clean API output.
+
+🚀 Installation
+# Inside your Strapi project
+npm install inkspire-plugin
+# or
+yarn add inkspire-plugin
+
+
+Then enable the plugin in ./config/plugins.js:
+
+module.exports = {
+  'inkspire-plugin': {
+    enabled: true,
+  },
+};
+
+⚡ Usage
+
+In Content-Type Builder, add a new field and select Inkspire Editor.
+
+Use the editor to write and format content.
+
+Preview updates instantly.
+
+Save → Reload → Watch content persist cleanly.
+
+🛠 Development
+Local Development
+
+Clone the repo inside your Strapi project’s ./plugins folder:
+
+cd my-strapi-project/plugins
+git clone https://github.com/kaushikpatil1710/Inkspire/tree/development
+
+
+Run Strapi with:
+
 npm run develop
-# or
-yarn develop
-```
 
-### `start`
+Plugin build:
 
-Start your Strapi application with autoReload disabled. [Learn more](https://docs.strapi.io/dev-docs/cli#strapi-start)
+cd your-path/src/plugins/inkspire-plugin: 
 
-```
-npm run start
-# or
-yarn start
-```
-
-### `build`
-
-Build your admin panel. [Learn more](https://docs.strapi.io/dev-docs/cli#strapi-build)
-
-```
 npm run build
-# or
-yarn build
-```
 
-## ⚙️ Deployment
 
-Strapi gives you many possible deployment options for your project including [Strapi Cloud](https://cloud.strapi.io). Browse the [deployment section of the documentation](https://docs.strapi.io/dev-docs/deployment) to find the best solution for your use case.
+The plugin will auto-register.
 
-```
-yarn strapi deploy
-```
+📦 Data Format
 
-## 📚 Learn more
+Inkspire stores content as structured JSON:
 
-- [Resource center](https://strapi.io/resource-center) - Strapi resource center.
-- [Strapi documentation](https://docs.strapi.io) - Official Strapi documentation.
-- [Strapi tutorials](https://strapi.io/tutorials) - List of tutorials made by the core team and the community.
-- [Strapi blog](https://strapi.io/blog) - Official Strapi blog containing articles made by the Strapi team and the community.
-- [Changelog](https://strapi.io/changelog) - Find out about the Strapi product updates, new features and general improvements.
+{
+  "blocks": [
+    { "type": "paragraph", "data": { "text": "Hello world!" } },
+    { "type": "header", "data": { "level": 2, "text": "Section Title" } },
+    { "type": "list", "data": { "style": "unordered", "items": ["One", "Two", "Three"] } }
+  ]
+}
 
-Feel free to check out the [Strapi GitHub repository](https://github.com/strapi/strapi). Your feedback and contributions are welcome!
 
-## ✨ Community
+This makes it frontend-friendly for frameworks like Next.js, React, or Vue.
 
-- [Discord](https://discord.strapi.io) - Come chat with the Strapi community including the core team.
-- [Forum](https://forum.strapi.io/) - Place to discuss, ask questions and find answers, show your Strapi project and get feedback or just talk with other Community members.
-- [Awesome Strapi](https://github.com/strapi/awesome-strapi) - A curated list of awesome things related to Strapi.
+🐞 Known Issues (Current Version)
 
----
+Toolbar active-state indicators missing (bold/italic button doesn’t highlight).
 
-<sub>🤫 Psst! [Strapi is hiring](https://strapi.io/careers).</sub>
+Undo/Redo not implemented.
+
+Minor spacing inconsistencies in preview (headers/lists).
+
+📌 Roadmap
+
+✅ Core formatting + preview
+
+✅ State-driven architecture
+
+⬜ Undo/Redo support
+
+⬜ Active toolbar states
+
+⬜ AI-assisted content suggestions
+
+⬜ Media embedding (images, videos)
+
+🤝 Contributing
+
+Pull requests and feature suggestions are welcome. Please open an issue first to discuss what you’d like to add or fix.
+
+📜 License
+
+MIT License. Free to use, modify, and distribute.
