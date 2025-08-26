@@ -70,7 +70,7 @@ const Toolbar: React.FC<{
     <div style={toolbarStyle}>
       <button
         style={active.bold ? btnActive : btnBase}
-        onMouseDown={handleBtn("bold")}
+        onClick={handleBtn("bold")}
         aria-pressed={active.bold}
         aria-label="Bold"
       >
@@ -78,7 +78,7 @@ const Toolbar: React.FC<{
       </button>
       <button
         style={active.italic ? btnActive : btnBase}
-        onMouseDown={handleBtn("italic")}
+        onClick={handleBtn("italic")}
         aria-pressed={active.italic}
         aria-label="Italic"
       >
@@ -122,7 +122,7 @@ const Toolbar: React.FC<{
         <option value="ol">1. Ordered</option>
       </select>
 
-      {/* Font dropdown (fire-and-forget; label reflects current) */}
+      {/* Font family */}
       <select
         style={selectBase}
         title="Font family"
@@ -138,12 +138,13 @@ const Toolbar: React.FC<{
         <option value="Arial, Helvetica, sans-serif">Arial</option>
         <option value="Georgia, serif">Georgia</option>
         <option value="Courier New, Courier, monospace">Courier New</option>
+        <option value="cursive">Cursive</option>
       </select>
 
-      <button style={btnBase} onMouseDown={handleBtn("codeblock")}>{"</> Code"}</button>
+      <button style={btnBase} onClick={handleBtn("codeblock")}>{"</> Code"}</button>
       <button
         style={active.block === "BLOCKQUOTE" ? btnActive : btnBase}
-        onMouseDown={handleBtn("block", "blockquote")}
+        onClick={handleBtn("block", "blockquote")}
         aria-pressed={active.block === "BLOCKQUOTE"}
       >
         ❝ Quote
@@ -176,7 +177,6 @@ const BrandPreview: React.FC = () => {
     const sel = window.getSelection();
     if (sel && sel.rangeCount > 0) savedRangeRef.current = sel.getRangeAt(0).cloneRange();
   };
-
   const restoreSelection = () => {
     const sel = window.getSelection();
     const r = savedRangeRef.current;
@@ -195,7 +195,7 @@ const BrandPreview: React.FC = () => {
     return sel && sel.rangeCount > 0 ? (sel.anchorNode as Node | null) : null;
   };
 
-  // Lift to direct editor child block
+  // lift to direct editor child block
   const getEditorBlock = (node: Node, editor: HTMLElement): HTMLElement | null => {
     let el = node.nodeType === Node.TEXT_NODE ? (node.parentElement as HTMLElement) : (node as HTMLElement);
     while (el && el !== editor && el.parentElement !== editor) el = el.parentElement as HTMLElement;
@@ -242,218 +242,50 @@ const BrandPreview: React.FC = () => {
     return null;
   };
 
-  // --- heading marker patterns ---
-  const LEADING_H_MARK = /^(h[1-6]\)\s*)/i;
-  const TRAILING_H_MARK = /(\s*\(h[1-6]\))$/i;
-
-  const stripHeadingMarkersOnBlock = (block: HTMLElement) => {
-    // strip leading "hX) " from first text node
-    const first = block.firstChild;
-    if (first && first.nodeType === Node.TEXT_NODE) {
-      (first as Text).data = (first as Text).data.replace(LEADING_H_MARK, "");
-      if ((first as Text).data === "") first.parentNode?.removeChild(first);
-    }
-    // strip trailing " (hX)" from last text node
-    const last = block.lastChild;
-    if (last && last.nodeType === Node.TEXT_NODE) {
-      (last as Text).data = (last as Text).data.replace(TRAILING_H_MARK, "");
-      if ((last as Text).data === "") last.parentNode?.removeChild(last);
-    }
+  const toEditorBlock = (node: Node, editor: HTMLElement): HTMLElement | null => {
+    let el: HTMLElement | null =
+      node.nodeType === Node.TEXT_NODE ? (node.parentElement as HTMLElement) : (node as HTMLElement);
+    while (el && el.parentElement !== editor) el = el.parentElement as HTMLElement;
+    return el && el.parentElement === editor ? el : null;
   };
 
-  // Apply required heading style as literal markers.
-  // Rule per your example: h1 is prefix "h1) ", others are suffix " (hN)"
-  const applyHeadingMarkersToBlock = (block: HTMLElement, tag: "h1" | "h2" | "h3" | "h4" | "h5" | "h6") => {
-    stripHeadingMarkersOnBlock(block);
-
-    if (tag === "h1") {
-      // prefix "h1) "
-      block.insertBefore(document.createTextNode(`${tag}) `), block.firstChild);
-    } else {
-      // suffix " (hN)"
-      block.appendChild(document.createTextNode(` (${tag})`));
+  const collectBlocksInRange = (editor: HTMLElement, range: Range): HTMLElement[] => {
+    const start = toEditorBlock(range.startContainer, editor);
+    const end = toEditorBlock(range.endContainer, editor);
+    if (!start || !end) return [];
+    const blocks: HTMLElement[] = [];
+    let cur: HTMLElement | null = start;
+    while (cur) {
+      blocks.push(cur);
+      if (cur === end) break;
+      cur = cur.nextElementSibling as HTMLElement;
     }
+    return blocks;
   };
 
-  const LEADING_NUM_MARK = /^\s*\d+\)\s*/;
-  const LEADING_BULLET_MARK = /^\s*•\s*/;
-
-  const stripListMarkerOnBlock = (block: HTMLElement) => {
-    const first = block.firstChild;
-    if (first && first.nodeType === Node.TEXT_NODE) {
-      let data = (first as Text).data;
-      data = data.replace(LEADING_NUM_MARK, "");
-      data = data.replace(LEADING_BULLET_MARK, "");
-      (first as Text).data = data;
-      if ((first as Text).data === "") first.parentNode?.removeChild(first);
-    }
-  };
-
-  // Detect our marker-based heading on a single block
-  const detectHeadingFromMarkers = (block: HTMLElement): HeadingType | undefined => {
-    const first = block.firstChild;
-    if (first && first.nodeType === Node.TEXT_NODE) {
-      const m = (first as Text).data.match(/^h([1-6])\)\s*/i);
-      if (m) return (`h${m[1]}` as HeadingType);
-    }
-    const last = block.lastChild;
-    if (last && last.nodeType === Node.TEXT_NODE) {
-      const m = (last as Text).data.match(/\(h([1-6])\)\s*$/i);
-      if (m) return (`h${m[1]}` as HeadingType);
-    }
-    return undefined;
-  };
-
-  // Get marker heading for current selection (falls back to tag-based)
-  const getActiveHeading = (): HeadingType => {
+  const isInside = (selector: string): boolean => {
     const editor = editorRef.current;
     const sel = window.getSelection();
-    if (!editor || !sel || sel.rangeCount === 0) return undefined;
-
-    const range = sel.getRangeAt(0);
-    const blkSel = getSelectedEditorBlocks(editor, range);
-    let block: HTMLElement | null = null;
-
-    if (blkSel) block = blkSel.start;
-    else block = getEditorBlock(range.startContainer, editor);
-
-    if (!block) return undefined;
-
-    const byMarker = detectHeadingFromMarkers(block);
-    if (byMarker) return byMarker;
-
-    // fallback: “p” if block is a normal paragraph-like tag
-    const raw = block.tagName.toUpperCase();
-    if (raw === "P" || raw === "DIV") return "p";
-    if (/^H[1-6]$/.test(raw)) return raw.toLowerCase() as HeadingType;
-    return undefined;
+    if (!editor || !sel || sel.rangeCount === 0) return false;
+    const node = sel.anchorNode;
+    if (!node || !editor.contains(node)) return false;
+    const el = node.nodeType === Node.ELEMENT_NODE
+      ? (node as HTMLElement)
+      : (node.parentElement as HTMLElement | null);
+    return !!el?.closest(selector);
   };
 
-
-  const applyOrderedListMarkers = (blocks: HTMLElement[]) => {
-    let i = 1;
-    blocks.forEach(b => {
-      stripHeadingMarkersOnBlock(b);   // headings shouldn’t conflict with list prefix
-      stripListMarkerOnBlock(b);       // avoid duplicates
-      b.insertBefore(document.createTextNode(`${i}) `), b.firstChild);
-      i += 1;
-    });
+  /* ---------- Visual defaults for headings/lists (inline; minimal) ---------- */
+  const HEADING_STYLES: Record<string, Partial<CSSStyleDeclaration>> = {
+    h1: { fontSize: "2rem", fontWeight: "700", margin: "0.6em 0 0.4em" },
+    h2: { fontSize: "1.5rem", fontWeight: "700", margin: "0.6em 0 0.4em" },
+    h3: { fontSize: "1.25rem", fontWeight: "600", margin: "0.6em 0 0.4em" },
+    h4: { fontSize: "1.125rem", fontWeight: "600", margin: "0.6em 0 0.4em" },
+    h5: { fontSize: "1rem", fontWeight: "600", margin: "0.6em 0 0.4em" },
+    h6: { fontSize: "0.95rem", fontWeight: "600", margin: "0.6em 0 0.4em" },
+    p: { fontSize: "1rem", fontWeight: "400", margin: "0.6em 0 0.6em" },
+    blockquote: { margin: "1em 1.5em", paddingLeft: "1em", borderLeft: "3px solid #d0d7de" },
   };
-
-  const applyUnorderedListMarkers = (blocks: HTMLElement[]) => {
-    blocks.forEach(b => {
-      stripHeadingMarkersOnBlock(b);
-      stripListMarkerOnBlock(b);
-      b.insertBefore(document.createTextNode(`• `), b.firstChild);
-    });
-  };
-
-
-
-  /* ---------- State readers (no deprecated APIs) ---------- */
-  const getActiveBlockTag = (): string | undefined => {
-    const editor = editorRef.current;
-    const sel = window.getSelection();
-    if (!editor || !sel || sel.rangeCount === 0) return undefined;
-    const node = sel.anchorNode as Node;
-    if (!editor.contains(node)) return undefined;
-
-    const el = (node as HTMLElement).closest?.("ul,ol,blockquote,h1,h2,h3,h4,h5,h6,p,div,li") as HTMLElement | null;
-    if (!el) return undefined;
-    if (el.tagName === "LI" && el.parentElement) return el.parentElement.tagName; // show UL/OL instead of LI
-    return el.tagName;
-  };
-
-  const getActiveListType = (): ListType => {
-    const editor = editorRef.current;
-    const sel = window.getSelection();
-    if (!editor || !sel || sel.rangeCount === 0) return undefined;
-
-    const node = sel.anchorNode as Node;
-    if (!editor.contains(node)) return undefined;
-
-    // real lists first
-    const ancestorList = (node as HTMLElement).closest?.("ul,ol") as HTMLElement | null;
-    if (ancestorList) return ancestorList.tagName === "UL" ? "ul" : "ol";
-
-    // marker-based lists
-    const block = getEditorBlock(node, editor);
-    if (!block) return undefined;
-
-    const first = block.firstChild;
-    if (first && first.nodeType === Node.TEXT_NODE) {
-      const txt = (first as Text).data;
-      if (/^\s*•\s+/.test(txt)) return "ul";
-      if (/^\s*\d+\)\s+/.test(txt)) return "ol";
-    }
-    return undefined;
-  };
-
-
-  const isInlineActive = (tags: string[]) => {
-    const editor = editorRef.current;
-    const root = getSelectionRoot();
-    if (!editor || !root || !editor.contains(root)) return false;
-
-    const el = findAncestor(root, (e) => tags.includes(e.tagName), editor);
-    if (el) return true;
-
-    // computed style heuristic
-    const nodeEl = findAncestor(root, (e) => !!e, editor) as HTMLElement | null;
-    if (!nodeEl) return false;
-
-    if (tags.includes("STRONG") || tags.includes("B")) {
-      const fw = window.getComputedStyle(nodeEl).fontWeight;
-      const num = parseInt(fw, 10);
-      if (fw === "bold" || fw === "bolder" || num >= 600) return true;
-    }
-    if (tags.includes("EM") || tags.includes("I")) {
-      const fs = window.getComputedStyle(nodeEl).fontStyle;
-      if (fs === "italic" || fs === "oblique") return true;
-    }
-    return false;
-  };
-
-  const blockTagToHeading = (tag?: string): HeadingType => {
-    if (!tag) return undefined;
-    const t = tag.toUpperCase();
-    if (t === "P" || t === "DIV") return "p";
-    if (/^H[1-6]$/.test(t)) return t.toLowerCase() as HeadingType;
-    return undefined;
-  };
-
-  const getActiveFontFamily = (): string | undefined => {
-    const editor = editorRef.current;
-    const sel = window.getSelection();
-    if (!editor || !sel || sel.rangeCount === 0) return undefined;
-    const node = sel.anchorNode as Node;
-    if (!editor.contains(node)) return undefined;
-
-    const el =
-      (node.nodeType === Node.ELEMENT_NODE ? (node as HTMLElement) : (node.parentElement as HTMLElement)) || editor;
-    const fam = (window.getComputedStyle(el).fontFamily || "").trim();
-
-    const known = [
-      { label: "Times New Roman", match: "Times New Roman" },
-      { label: "Arial", match: "Arial" },
-      { label: "Georgia", match: "Georgia" },
-      { label: "Courier New", match: "Courier New" },
-    ];
-    const hit = known.find((k) => fam.toLowerCase().includes(k.match.toLowerCase()));
-    return hit ? hit.label : fam || undefined;
-  };
-
-  const updateToolbarState = () => {
-    const block = getActiveBlockTag();     // keep if you still want to show BLOCKQUOTE active state
-    const list = getActiveListType();      // we’ll fix list detection next
-    const bold = isInlineActive(["STRONG", "B"]);
-    const italic = isInlineActive(["EM", "I"]);
-    const heading = getActiveHeading();    // << use marker-aware heading
-    const fontFamily = getActiveFontFamily();
-
-    setActive({ bold, italic, list, block, heading, fontFamily });
-  };
-
 
   /* ---------- Editor mutations ---------- */
   const updateHtmlFromEditor = () => {
@@ -492,151 +324,6 @@ const BrandPreview: React.FC = () => {
     updateHtmlFromEditor();
   };
 
-  const applyHeadingMulti = (tag: "p" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6") => {
-    restoreSelection();
-    const sel = window.getSelection();
-    if (!sel || sel.rangeCount === 0) return;
-    const range = sel.getRangeAt(0);
-    const editor = editorRef.current;
-    if (!editor) return;
-
-    // Collect selected blocks
-    const blkSel = getSelectedEditorBlocks(editor, range);
-    const blocks: HTMLElement[] = [];
-    if (blkSel) {
-      const { start, end } = blkSel;
-      let cur: HTMLElement | null = start;
-      while (cur) {
-        blocks.push(cur);
-        if (cur === end) break;
-        cur = cur.nextElementSibling as HTMLElement;
-      }
-    } else {
-      const b = getEditorBlock(range.startContainer, editor);
-      if (b) blocks.push(b);
-    }
-    if (blocks.length === 0) return;
-
-    blocks.forEach(b => {
-      // If we hit a list container, convert each LI to a plain block with markers
-      if (b.tagName === "UL" || b.tagName === "OL") {
-        const items = Array.from(b.children) as HTMLElement[];
-        let ref = b;
-        items.forEach(li => {
-          const p = document.createElement("p");
-          // move all children to preserve inline formatting
-          while (li.firstChild) p.appendChild(li.firstChild);
-          applyHeadingMarkersToBlock(p, tag === "p" ? "h1" : (tag as any)); // if "p", remove markers (see below)
-          b.parentElement?.insertBefore(p, ref);
-          ref = p;
-          if (tag !== "p") {
-            applyHeadingMarkersToBlock(p, tag)
-          }
-        });
-        b.remove();
-        return;
-      }
-
-      // Normal block: either clear markers (for "p") or apply specific hN marker
-      if (tag === "p") {
-        stripHeadingMarkersOnBlock(b);
-      } else {
-        applyHeadingMarkersToBlock(b, tag);
-      }
-    });
-
-    updateHtmlFromEditor();
-    saveSelection();
-    updateToolbarState();
-  };
-
-  const applyListMulti = (listType: "ul" | "ol") => {
-    restoreSelection();
-
-    const sel = window.getSelection();
-    if (!sel || sel.rangeCount === 0) return;
-    const range = sel.getRangeAt(0);
-    const editor = editorRef.current;
-    if (!editor) return;
-
-    // Gather blocks: if selection spans multiple blocks, use them;
-    // otherwise split the single block by <br> into multiple paragraphs.
-    const blkSel = getSelectedEditorBlocks(editor, range);
-    let blocks: HTMLElement[] = [];
-
-    if (blkSel) {
-      const { start, end } = blkSel;
-      let cur: HTMLElement | null = start;
-      while (cur) {
-        // Convert list containers to paragraphs per item
-        if (cur.tagName === "UL" || cur.tagName === "OL") {
-          const items = Array.from(cur.children) as HTMLElement[];
-          items.forEach(li => {
-            const p = document.createElement("p");
-            while (li.firstChild) p.appendChild(li.firstChild);
-            cur?.parentElement?.insertBefore(p, cur);
-            blocks.push(p);
-          });
-          const toRemove = cur;
-          cur = cur.nextElementSibling as HTMLElement | null;
-          toRemove.remove();
-          if (!cur || toRemove === end) break;
-          continue;
-        }
-        blocks.push(cur);
-        if (cur === end) break;
-        cur = cur.nextElementSibling as HTMLElement | null;
-      }
-    } else {
-      const single = getEditorBlock(range.startContainer, editor);
-      if (single) {
-        // split by <br> into separate <p> siblings to apply markers per line
-        const tmp = document.createElement("div");
-        tmp.innerHTML = single.innerHTML;
-        const parts = tmp.innerHTML.split(/<br\s*\/?>/i).map(s => s.trim());
-        if (parts.length > 1) {
-          const marker = document.createTextNode("");
-          single.parentElement!.insertBefore(marker, single);
-          parts.forEach(seg => {
-            if (!seg) return;
-            const p = document.createElement("p");
-            p.innerHTML = seg;
-            marker.parentNode!.insertBefore(p, marker);
-            blocks.push(p);
-          });
-          single.remove();
-          marker.parentNode!.removeChild(marker);
-        } else {
-          blocks.push(single);
-        }
-      }
-    }
-
-    if (blocks.length === 0) return;
-
-    if (listType === "ol") applyOrderedListMarkers(blocks);
-    else applyUnorderedListMarkers(blocks);
-    // if already has markers of the same type, remove them instead
-    const already = listType === "ol" ? /^\s*\d+\)\s+/ : /^\s*•\s+/;
-    const allHave = blocks.every(b => {
-      const first = b.firstChild;
-      return first && first.nodeType === Node.TEXT_NODE && already.test((first as Text).data);
-    });
-    if (allHave) {
-      blocks.forEach(stripListMarkerOnBlock);
-      updateHtmlFromEditor();
-      saveSelection();
-      updateToolbarState();
-      return;
-    }
-
-
-    updateHtmlFromEditor();
-    saveSelection();
-    updateToolbarState();
-  };
-
-
   const insertCodeBlock = () => {
     restoreSelection();
     const sel = window.getSelection();
@@ -660,110 +347,185 @@ const BrandPreview: React.FC = () => {
     const r = document.createRange();
     r.selectNodeContents(pre);
     r.collapse(false);
-    sel.removeAllRanges();
-    sel.addRange(r);
+    const s = window.getSelection();
+    s?.removeAllRanges();
+    s?.addRange(r);
 
     updateHtmlFromEditor();
   };
 
   const applyFont = (fontFamily: string) => wrapInline("span", { fontFamily });
 
-  const toggleBlockquote = () => {
+  // Replace selected blocks with a new tag (p, h1..h6, blockquote)
+  const applyBlockFormat = (tag: string) => {
+    if (isInside("pre")) return; // don't retag inside code blocks
     restoreSelection();
     const sel = window.getSelection();
-    if (!sel || sel.rangeCount === 0) return;
-    const range = sel.getRangeAt(0);
     const editor = editorRef.current;
-    if (!editor) return;
+    if (!sel || sel.rangeCount === 0 || !editor) return;
 
-    const anchor = sel.anchorNode as Node;
-    const bqAncestor = (anchor instanceof Element ? anchor : anchor.parentElement)?.closest("blockquote");
-    if (bqAncestor && editor.contains(bqAncestor)) {
-      unwrapBlockquote(bqAncestor as HTMLElement);
-      updateHtmlFromEditor();
-      saveSelection();
-      updateToolbarState();
-      return;
-    }
+    const range = sel.getRangeAt(0);
+    const blocks = collectBlocksInRange(editor, range);
+    if (blocks.length === 0) return;
 
-    const selBlocks = getSelectedEditorBlocks(editor, range);
-    if (!selBlocks) return;
-    const { start, end } = selBlocks;
+    blocks.forEach((blk) => {
+      const current = blk.tagName.toLowerCase();
+      if (current === tag.toLowerCase()) return;
 
-    const marker = document.createTextNode("");
-    start.parentElement!.insertBefore(marker, start);
+      const replacement = document.createElement(tag);
+      while (blk.firstChild) replacement.appendChild(blk.firstChild);
 
-    const bq = document.createElement("blockquote");
-    bq.style.margin = "1em 1.5em";
-    bq.style.paddingLeft = "1em";
-    bq.style.borderLeft = "3px solid #d0d7de";
-    start.parentElement!.insertBefore(bq, marker);
+      const styles = HEADING_STYLES[tag.toLowerCase()];
+      if (styles) Object.assign(replacement.style, styles);
 
-    moveRangeInto(start, end, bq);
-    marker.parentNode?.removeChild(marker);
-
-    const r = document.createRange();
-    r.selectNodeContents(bq);
-    r.collapse(false);
-    sel.removeAllRanges();
-    sel.addRange(r);
+      blk.replaceWith(replacement);
+    });
 
     updateHtmlFromEditor();
-    saveSelection();
-    updateToolbarState();
   };
 
-  /* ---------- Command dispatcher ---------- */
-  const onCommand = (cmd: string, val?: string) => {
-    editorRef.current?.focus();
+  // Wrap selected blocks into a list (ul/ol)
+  const applyList = (listType: "ul" | "ol") => {
+    if (isInside("pre")) return; // don't list-wrap code
     restoreSelection();
+    const sel = window.getSelection();
+    const editor = editorRef.current;
+    if (!sel || sel.rangeCount === 0 || !editor) return;
 
-    const tryExec = (command: string, value?: string) => {
-      try {
-        if (value != null) document.execCommand(command, false, value);
-        else document.execCommand(command, false);
-        return true;
-      } catch {
-        return false;
-      }
-    };
+    const range = sel.getRangeAt(0);
+    const blocks = collectBlocksInRange(editor, range);
+    if (blocks.length === 0) return;
 
-    switch (cmd) {
-      case "bold":
-        tryExec("bold");
-        break;
-      case "italic":
-        tryExec("italic");
-        break;
-      case "code":
-        wrapInline("code");
-        break;
-      case "codeblock":
-        insertCodeBlock();
-        break;
-      case "block":
-        if (!val) break;
-        if (["p", "h1", "h2", "h3", "h4", "h5", "h6"].includes(val)) {
-          // ignore execCommand; we’re using markers now
-          applyHeadingMulti(val as any);
-        } else if (val === "blockquote") {
-          // keep your blockquote wrapper if you still want it, or drop it if “quote” is purely visual
-          toggleBlockquote();
-        }
-        break;
-      case "list":
-        if (val === "ul" || val === "ol") {
-          applyListMulti(val);
-        }
-        break;
-      case "font":
-        if (val) applyFont(val);
-        break;
-    }
+    const list = document.createElement(listType);
+    list.style.listStyleType = listType === "ul" ? "disc" : "decimal";
+    list.style.paddingLeft = "1.25rem";
+    list.style.margin = "0.6em 0 0.6em";
+
+    blocks.forEach((blk) => {
+      const li = document.createElement("li");
+      while (blk.firstChild) li.appendChild(blk.firstChild);
+      list.appendChild(li);
+    });
+
+    const anchor = blocks[0];
+    anchor.parentElement?.insertBefore(list, anchor);
+    blocks.forEach((b) => b.remove());
 
     updateHtmlFromEditor();
-    saveSelection();
-    updateToolbarState();
+  };
+
+  /* ---------- State readers ---------- */
+  const getActiveBlockTag = (): string | undefined => {
+    const editor = editorRef.current;
+    const sel = window.getSelection();
+    if (!editor || !sel || sel.rangeCount === 0) return undefined;
+
+    const node = sel.anchorNode;
+    if (!node || !editor.contains(node)) return undefined;
+
+    const el =
+      node.nodeType === Node.ELEMENT_NODE
+        ? (node as HTMLElement)
+        : (node.parentElement as HTMLElement | null);
+
+    if (!el) return undefined;
+
+    const block = el.closest("ul,ol,blockquote,h1,h2,h3,h4,h5,h6,p,div,li") as HTMLElement | null;
+    if (!block) return undefined;
+
+    if (block.tagName === "LI" && block.parentElement) {
+      return block.parentElement.tagName; // "UL" or "OL"
+    }
+    return block.tagName; // "P","H2","BLOCKQUOTE", etc.
+  };
+
+  const blockTagToHeading = (tag?: string): HeadingType => {
+    if (!tag) return undefined;
+    const t = tag.toUpperCase();
+    if (t === "P" || t === "DIV") return "p";
+    if (/^H[1-6]$/.test(t)) return t.toLowerCase() as HeadingType;
+    return undefined;
+  };
+
+  const getActiveHeading = (): HeadingType => {
+    const tag = getActiveBlockTag();
+    if (!tag) return undefined;
+    if (tag === "BLOCKQUOTE" || tag === "UL" || tag === "OL") return undefined;
+    return blockTagToHeading(tag);
+  };
+
+  const getActiveListType = (): ListType => {
+    const editor = editorRef.current;
+    const sel = window.getSelection();
+    if (!editor || !sel || sel.rangeCount === 0) return undefined;
+
+    const node = sel.anchorNode;
+    if (!node || !editor.contains(node)) return undefined;
+
+    const el = node.nodeType === Node.ELEMENT_NODE
+      ? (node as HTMLElement)
+      : (node.parentElement as HTMLElement | null);
+
+    if (!el) return undefined;
+
+    const list = el.closest("ul,ol") as HTMLElement | null;
+    if (!list) return undefined;
+    return list.tagName === "UL" ? "ul" : "ol";
+  };
+
+  const getActiveFontFamily = (): string | undefined => {
+    const editor = editorRef.current;
+    const sel = window.getSelection();
+    if (!editor || !sel || sel.rangeCount === 0) return undefined;
+    const node = sel.anchorNode as Node;
+    if (!editor.contains(node)) return undefined;
+
+    const el =
+      (node.nodeType === Node.ELEMENT_NODE ? (node as HTMLElement) : (node.parentElement as HTMLElement)) || editor;
+    const fam = (window.getComputedStyle(el).fontFamily || "").trim();
+
+    const known = [
+      { label: "Times New Roman", match: "Times New Roman" },
+      { label: "Arial", match: "Arial" },
+      { label: "Georgia", match: "Georgia" },
+      { label: "Courier New", match: "Courier New" },
+    ];
+    const hit = known.find((k) => fam.toLowerCase().includes(k.match.toLowerCase()));
+    return hit ? hit.label : fam || undefined;
+  };
+
+  const isInlineActive = (tags: string[]) => {
+    const editor = editorRef.current;
+    const root = getSelectionRoot();
+    if (!editor || !root || !editor.contains(root)) return false;
+
+    const el = findAncestor(root, (e) => tags.includes(e.tagName), editor);
+    if (el) return true;
+
+    const nodeEl = findAncestor(root, (e) => !!e, editor) as HTMLElement | null;
+    if (!nodeEl) return false;
+
+    if (tags.includes("STRONG") || tags.includes("B")) {
+      const fw = window.getComputedStyle(nodeEl).fontWeight;
+      const num = parseInt(fw, 10);
+      if (fw === "bold" || fw === "bolder" || num >= 600) return true;
+    }
+    if (tags.includes("EM") || tags.includes("I")) {
+      const fs = window.getComputedStyle(nodeEl).fontStyle;
+      if (fs === "italic" || fs === "oblique") return true;
+    }
+    return false;
+  };
+
+  const updateToolbarState = () => {
+    const block = getActiveBlockTag();
+    const list = getActiveListType();
+    const bold = isInlineActive(["STRONG", "B"]);
+    const italic = isInlineActive(["EM", "I"]);
+    const heading = getActiveHeading();
+    const fontFamily = getActiveFontFamily();
+
+    setActive({ bold, italic, list, block, heading, fontFamily });
   };
 
   /* ---------- Events ---------- */
@@ -794,6 +556,58 @@ const BrandPreview: React.FC = () => {
     }
     updateToolbarState();
   }, []);
+
+  // ---------- Command dispatcher ----------
+  const onCommand = (cmd: string, val?: string) => {
+    // keep focus & selection alive
+    editorRef.current?.focus();
+    restoreSelection();
+
+    switch (cmd) {
+      // Inline
+      case "bold":
+        // using execCommand for inline toggles is still the least painful cross-browser option
+        try { document.execCommand("bold", false); } catch { }
+        break;
+
+      case "italic":
+        try { document.execCommand("italic", false); } catch { }
+        break;
+
+      case "code":
+        wrapInline("code");
+        break;
+
+      // Blocks
+      case "block":
+        if (val) applyBlockFormat(val); // "p" | "h1".."h6" | "blockquote"
+        break;
+
+      case "codeblock":
+        insertCodeBlock();
+        break;
+
+      // Lists
+      case "list":
+        if (val === "ul" || val === "ol") applyList(val);
+        break;
+
+      // Font
+      case "font":
+        if (val) applyFont(val);
+        break;
+
+      default:
+        // shrug
+        break;
+    }
+
+    // sync UI
+    updateHtmlFromEditor();
+    saveSelection();
+    updateToolbarState();
+  };
+
 
   /* ---------- Inline styles (kept) ---------- */
   const pageStyle: React.CSSProperties = {
