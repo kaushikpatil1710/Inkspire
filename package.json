@@ -1,0 +1,40 @@
+{
+  "name": "inkspire",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A Strapi application",
+  "scripts": {
+    "console": "strapi console",
+    "deploy": "strapi deploy",
+    "start": "strapi start",
+    "strapi": "strapi",
+    "upgrade": "npx @strapi/upgrade latest",
+    "upgrade:dry": "npx @strapi/upgrade latest --dry",
+    "develop": "cross-env NODE_OPTIONS=--max-old-space-size=4096 strapi develop",
+    "build": "cross-env NODE_OPTIONS=--max-old-space-size=4096 strapi build"
+  },
+  "dependencies": {
+    "@strapi/plugin-cloud": "5.22.0",
+    "@strapi/plugin-users-permissions": "5.22.0",
+    "@strapi/strapi": "5.22.0",
+    "pg": "8.8.0",
+    "react": "^18.0.0",
+    "react-dom": "^18.0.0",
+    "react-router-dom": "^6.0.0",
+    "styled-components": "^6.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
+    "typescript": "^5"
+  },
+  "engines": {
+    "node": ">=18.0.0 <=22.x.x",
+    "npm": ">=6.0.0"
+  },
+  "strapi": {
+    "uuid": "d030f4c2-343a-4406-8ac8-de58843e4c26",
+    "installId": "5d524ce1f90842f80e1a3a1c7100baf0be8807296cd3ff265936f5820b5257e1"
+  }
+}

@@ -1,3 +1,72 @@
+# ==========================
+# Node.js / Dependencies
+# ==========================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+package-lock.json
+yarn.lock
+.pnpm-debug.log
+
+# ==========================
+# Strapi build artifacts
+# ==========================
+.build/
+.cache/
+dist/
+tmp/
+*.tmp
+
+# ==========================
+# Local environment files
+# ==========================
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# ==========================
+# Logs
+# ==========================
+logs/
+*.log
+*.log.*
+*.out
+*.err
+
+# ==========================
+# OS-specific trash
+# ==========================
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Icon?
+desktop.ini
+
+# ==========================
+# Editor cruft
+# ==========================
+.vscode/
+.idea/
+*.swp
+*.swo
+*.swn
+
+# ==========================
+# Test coverage
+# ==========================
+coverage/
+.nyc_output/
+
+# ==========================
+# Misc
+# ==========================
+*.tgz
+*.tar.gz
+
 # Logs
 logs
 *.log
