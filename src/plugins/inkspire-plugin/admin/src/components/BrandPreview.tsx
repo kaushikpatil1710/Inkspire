@@ -10,10 +10,16 @@ interface ToolbarState {
   bold: boolean;
   italic: boolean;
   list?: ListType;
-  block?: string;        // "P","H1","BLOCKQUOTE","UL","OL"
+  block?: string;        // "P","H1","BLOCKQUOTE","UL","OL"
   heading?: HeadingType; // normalized for dropdown
   fontFamily?: string;
 }
+interface BrandPreviewProps {
+  name: string;
+  value: { html: string } | null;
+  onChange: (event: { target: { name: string; value: any; type?: "json" } }) => void;
+}
+
 
 /* =========================
    Toolbar (inline styles kept)
@@ -156,10 +162,10 @@ const Toolbar: React.FC<{
 /* =========================
    Main Component
    ========================= */
-const BrandPreview: React.FC = () => {
+const BrandPreview: React.FC<BrandPreviewProps> = ({ name, value, onChange }) => {
   const initialHtml = `<h2>Your Brand Story</h2><p>Start writing here...</p>`;
-  const [html, setHtml] = useState<string>(initialHtml);
   const [darkMode, setDarkMode] = useState(false);
+  const [html, setHtml] = useState<string>(value?.html ?? initialHtml);
   const [active, setActive] = useState<ToolbarState>({
     bold: false,
     italic: false,
@@ -177,6 +183,7 @@ const BrandPreview: React.FC = () => {
     const sel = window.getSelection();
     if (sel && sel.rangeCount > 0) savedRangeRef.current = sel.getRangeAt(0).cloneRange();
   };
+
   const restoreSelection = () => {
     const sel = window.getSelection();
     const r = savedRangeRef.current;
@@ -195,39 +202,6 @@ const BrandPreview: React.FC = () => {
     return sel && sel.rangeCount > 0 ? (sel.anchorNode as Node | null) : null;
   };
 
-  // lift to direct editor child block
-  const getEditorBlock = (node: Node, editor: HTMLElement): HTMLElement | null => {
-    let el = node.nodeType === Node.TEXT_NODE ? (node.parentElement as HTMLElement) : (node as HTMLElement);
-    while (el && el !== editor && el.parentElement !== editor) el = el.parentElement as HTMLElement;
-    return el && el !== editor ? el : null;
-  };
-
-  const getSelectedEditorBlocks = (
-    editor: HTMLElement,
-    range: Range
-  ): { start: HTMLElement; end: HTMLElement } | null => {
-    const start = getEditorBlock(range.startContainer, editor);
-    const end = getEditorBlock(range.endContainer, editor);
-    if (!start || !end) return null;
-    return { start, end };
-  };
-
-  const moveRangeInto = (start: HTMLElement, end: HTMLElement, target: HTMLElement): void => {
-    let cur: Node | null = start;
-    while (cur) {
-      const next: Node | null = cur.nextSibling;
-      target.appendChild(cur);
-      if (cur === end) break;
-      cur = next;
-    }
-  };
-
-  const unwrapBlockquote = (bq: HTMLElement) => {
-    const parent = bq.parentElement!;
-    const ref = bq;
-    while (bq.firstChild) parent.insertBefore(bq.firstChild, ref);
-    parent.removeChild(bq);
-  };
 
   const findAncestor = (
     start: Node | null,
@@ -287,11 +261,8 @@ const BrandPreview: React.FC = () => {
     blockquote: { margin: "1em 1.5em", paddingLeft: "1em", borderLeft: "3px solid #d0d7de" },
   };
 
-  /* ---------- Editor mutations ---------- */
-  const updateHtmlFromEditor = () => {
-    const ed = editorRef.current;
-    if (ed) setHtml(ed.innerHTML);
-  };
+  // --- MODIFICATION: REMOVE `updateHtmlFromEditor` ---
+  // We will now read from the DOM directly when needed.
 
   const wrapInline = (tagName: string, style?: Partial<CSSStyleDeclaration>) => {
     restoreSelection();
@@ -321,7 +292,7 @@ const BrandPreview: React.FC = () => {
       sel.removeAllRanges();
       sel.addRange(after);
     }
-    updateHtmlFromEditor();
+    // MODIFICATION: REMOVED `updateHtmlFromEditor()` here
   };
 
   const insertCodeBlock = () => {
@@ -351,7 +322,7 @@ const BrandPreview: React.FC = () => {
     s?.removeAllRanges();
     s?.addRange(r);
 
-    updateHtmlFromEditor();
+    // MODIFICATION: REMOVED `updateHtmlFromEditor()` here
   };
 
   const applyFont = (fontFamily: string) => wrapInline("span", { fontFamily });
@@ -381,7 +352,7 @@ const BrandPreview: React.FC = () => {
       blk.replaceWith(replacement);
     });
 
-    updateHtmlFromEditor();
+    // MODIFICATION: REMOVED `updateHtmlFromEditor()` here
   };
 
   // Wrap selected blocks into a list (ul/ol)
@@ -411,7 +382,7 @@ const BrandPreview: React.FC = () => {
     anchor.parentElement?.insertBefore(list, anchor);
     blocks.forEach((b) => b.remove());
 
-    updateHtmlFromEditor();
+    // MODIFICATION: REMOVED `updateHtmlFromEditor()` here
   };
 
   /* ---------- State readers ---------- */
@@ -536,26 +507,34 @@ const BrandPreview: React.FC = () => {
       saveSelection();
       updateToolbarState();
     };
+    // --- MODIFICATION: ADD onInput listener to update toolbar state ---
+    // We still need this to keep the toolbar in sync with selection,
+    // but we no longer use it to manage the component's state.
     ed.addEventListener("mouseup", onInteract);
     ed.addEventListener("keyup", onInteract);
-    ed.addEventListener("input", updateToolbarState);
+    ed.addEventListener("input", onInteract);
     document.addEventListener("selectionchange", updateToolbarState);
     return () => {
       ed.removeEventListener("mouseup", onInteract);
       ed.removeEventListener("keyup", onInteract);
-      ed.removeEventListener("input", updateToolbarState);
+      ed.removeEventListener("input", onInteract);
       document.removeEventListener("selectionchange", updateToolbarState);
     };
   }, []);
 
+  // --- MODIFICATION: Initialize the editor's content from the value prop ---
   useEffect(() => {
     const ed = editorRef.current;
-    if (ed && ed.innerHTML.trim() === "") {
-      ed.innerHTML = initialHtml;
-      setHtml(ed.innerHTML);
+    if (ed) {
+      // Only set innerHTML if it's different from the current value to avoid re-renders
+      if (ed.innerHTML !== (value?.html ?? initialHtml)) {
+        ed.innerHTML = value?.html ?? initialHtml;
+      }
     }
     updateToolbarState();
-  }, []);
+  }, [value, initialHtml]);
+
+  // --- MODIFICATION: REMOVED the `handleInput` function ---
 
   // ---------- Command dispatcher ----------
   const onCommand = (cmd: string, val?: string) => {
@@ -602,12 +581,28 @@ const BrandPreview: React.FC = () => {
         break;
     }
 
-    // sync UI
-    updateHtmlFromEditor();
+    // --- MODIFICATION: Read and sync the DOM content to the parent onChange handler ---
+    const ed = editorRef.current;
+    if (ed) {
+      const newHtml = ed.innerHTML;
+      // This syncs the component's internal state for preview and the parent's value
+      onChange({
+        target: { name, value: { html: newHtml }, type: "json" },
+      });
+    }
+
+    // sync toolbar and selection
     saveSelection();
     updateToolbarState();
   };
 
+  // --- MODIFICATION: Create a new state to handle the preview HTML ---
+  // This is separate from the editor's content and is updated via the onChange prop.
+  const [previewHtml, setPreviewHtml] = useState<string>(value?.html ?? initialHtml);
+
+  useEffect(() => {
+    setPreviewHtml(value?.html ?? initialHtml);
+  }, [value, initialHtml]);
 
   /* ---------- Inline styles (kept) ---------- */
   const pageStyle: React.CSSProperties = {
@@ -626,11 +621,13 @@ const BrandPreview: React.FC = () => {
     padding: 16,
     minHeight: 220,
     textAlign: "left",
-    direction: "ltr",
     outline: "none",
     marginBottom: 24,
     boxShadow: darkMode ? "none" : "0 2px 8px rgba(0,0,0,0.06)",
+
+    direction: "ltr",          // ✅ only direction, no bidi override
   };
+
 
   const toggleBtn: React.CSSProperties = {
     padding: "8px 12px",
@@ -692,6 +689,17 @@ const BrandPreview: React.FC = () => {
     wordBreak: "break-word",
   };
 
+  // --- MODIFICATION: Sync content on blur to handle un-forced changes ---
+  const handleBlur = () => {
+    const ed = editorRef.current;
+    if (ed) {
+      onChange({
+        target: { name, value: { html: ed.innerHTML }, type: "json" },
+      });
+    }
+  };
+
+
   return (
     <div style={pageStyle}>
       <Toolbar onCommand={onCommand} active={active} />
@@ -702,13 +710,25 @@ const BrandPreview: React.FC = () => {
         style={editorBox}
         contentEditable
         suppressContentEditableWarning
-        onInput={(e) => setHtml((e.target as HTMLDivElement).innerHTML)}
         spellCheck={false}
-        tabIndex={0}
-      >
-        <h2>Your Brand Story</h2>
-        <p>Start writing here...</p>
-      </div>
+        onInput={(e) => {
+          const newHtml = (e.target as HTMLDivElement).innerHTML;
+          setHtml(newHtml); // ✅ keeps preview live
+          onChange({
+            target: { name, value: { html: newHtml }, type: "json" },
+          });
+        }}
+        onBlur={() => {
+          // optional: re-sync on blur if needed
+          if (editorRef.current) {
+            const finalHtml = editorRef.current.innerHTML;
+            setHtml(finalHtml);
+            onChange({
+              target: { name, value: { html: finalHtml }, type: "json" },
+            });
+          }
+        }}
+      />
 
       <button style={toggleBtn} onClick={() => setDarkMode(!darkMode)}>
         {darkMode ? "🌙 Dark" : "☀️ Light"}
@@ -721,7 +741,10 @@ const BrandPreview: React.FC = () => {
         </div>
         <div style={phoneShell}>
           <div style={phoneBar}>───</div>
-          <div style={{ ...previewContent, minHeight: 500 }} dangerouslySetInnerHTML={{ __html: html }} />
+          <div
+            style={{ ...previewContent, minHeight: 500 }}
+            dangerouslySetInnerHTML={{ __html: html }}
+          />
         </div>
       </div>
     </div>
