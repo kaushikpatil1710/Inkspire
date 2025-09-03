@@ -167,24 +167,25 @@ const Toolbar: React.FC<{
       >
         ❝ Quote
       </button>
-      <button
-        style={active.alignment === "left" ? btnActive : btnBase}
-        onClick={() => onCommand("align", "left" as "left")}
+
+      {/* Alignment dropdown */}
+      <select
+        style={selectBase}
+        title="Alignment"
+        value={active.alignment ?? ""}
+        onChange={(e) => {
+          const val = e.target.value as "left" | "center" | "right" | "";
+          if (!val) return;
+          onCommand("align", val);
+        }}
       >
-        ⬅ Left
-      </button>
-      <button
-        style={active.alignment === "center" ? btnActive : btnBase}
-        onClick={() => onCommand("align", "center" as "center")}
-      >
-        ⬍ Center
-      </button>
-      <button
-        style={active.alignment === "right" ? btnActive : btnBase}
-        onClick={() => onCommand("align", "right" as "right")}
-      >
-        ➡ Right
-      </button>
+        <option value="">Align</option>
+        <option value="left">⬅ Left</option>
+        <option value="center">⬍ Center</option>
+        <option value="right">➡ Right</option>
+      </select>
+
+
     </div>
   );
 };
@@ -544,20 +545,6 @@ const BrandPreview: React.FC<BrandPreviewProps> = ({ name, value, onChange }) =>
     return false;
   };
 
-
-  const updateToolbarState = () => {
-    const block = getActiveBlockTag();
-    const list = getActiveListType();
-    const alignment = getActiveAlignment();
-    const underline = isInlineActive(["U", "UNDERLINE"]);
-    const bold = isInlineActive(["STRONG", "B"]);
-    const italic = isInlineActive(["EM", "I"]);
-    const heading = getActiveHeading();
-    const fontFamily = getActiveFontFamily();
-
-    setActive({ bold, italic, underline,list, block, heading, fontFamily,alignment });
-  };
-
   const getActiveAlignment = (): "left" | "center" | "right" | undefined => {
     const editor = editorRef.current;
     const sel = window.getSelection();
@@ -579,6 +566,23 @@ const BrandPreview: React.FC<BrandPreviewProps> = ({ name, value, onChange }) =>
     if (align === "center" || align === "right") return align;
     return "left"; // default
   };
+
+
+
+  const updateToolbarState = () => {
+    const block = getActiveBlockTag();
+    const list = getActiveListType();
+    const alignment = getActiveAlignment();
+    const underline = isInlineActive(["U", "UNDERLINE"]);
+    const bold = isInlineActive(["STRONG", "B"]);
+    const italic = isInlineActive(["EM", "I"]);
+    const heading = getActiveHeading();
+    const fontFamily = getActiveFontFamily();
+
+    setActive({ bold, italic, underline, list, block, heading, fontFamily, alignment });
+  };
+
+
 
 
   /* ---------- Events ---------- */
