@@ -10,7 +10,8 @@ interface ToolbarState {
   bold: boolean;
   italic: boolean;
   list?: ListType;
-  block?: string;        // "P","H1","BLOCKQUOTE","UL","OL"
+  block?: string;
+  underline: boolean; // "P","H1","BLOCKQUOTE","UL","OL"
   heading?: HeadingType; // normalized for dropdown
   fontFamily?: string;
 }
@@ -91,6 +92,16 @@ const Toolbar: React.FC<{
         I
       </button>
 
+      <button
+        style={active.underline ? btnActive : btnBase}
+        onClick={handleBtn("underline")}
+        aria-pressed={active.underline}
+        aria-label="Underline"
+      >
+        U
+      </button>
+
+
       {/* Headings dropdown (controlled) */}
       <select
         style={selectBase}
@@ -170,6 +181,7 @@ const BrandPreview: React.FC<BrandPreviewProps> = ({ name, value, onChange }) =>
     bold: false,
     italic: false,
     list: undefined,
+    underline: false,
     block: "P",
     heading: "p",
     fontFamily: undefined,
@@ -491,12 +503,13 @@ const BrandPreview: React.FC<BrandPreviewProps> = ({ name, value, onChange }) =>
   const updateToolbarState = () => {
     const block = getActiveBlockTag();
     const list = getActiveListType();
+    const underline = isInlineActive(["U", "UNDERLINE"]);
     const bold = isInlineActive(["STRONG", "B"]);
     const italic = isInlineActive(["EM", "I"]);
     const heading = getActiveHeading();
     const fontFamily = getActiveFontFamily();
 
-    setActive({ bold, italic, list, block, heading, fontFamily });
+    setActive({ bold, italic,underline, list, block, heading, fontFamily });
   };
 
   /* ---------- Events ---------- */
@@ -552,6 +565,10 @@ const BrandPreview: React.FC<BrandPreviewProps> = ({ name, value, onChange }) =>
       case "italic":
         try { document.execCommand("italic", false); } catch { }
         break;
+      case "underline":
+        try { document.execCommand("underline", false); } catch { }
+        break;
+
 
       case "code":
         wrapInline("code");
