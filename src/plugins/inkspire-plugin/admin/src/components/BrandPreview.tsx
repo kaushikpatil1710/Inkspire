@@ -482,23 +482,35 @@ const BrandPreview: React.FC<BrandPreviewProps> = ({ name, value, onChange }) =>
     const root = getSelectionRoot();
     if (!editor || !root || !editor.contains(root)) return false;
 
+    // ✅ If inside an actual <b> or <strong> (or matching tag), it's bold
     const el = findAncestor(root, (e) => tags.includes(e.tagName), editor);
     if (el) return true;
 
     const nodeEl = findAncestor(root, (e) => !!e, editor) as HTMLElement | null;
     if (!nodeEl) return false;
 
+    // ✅ Bold check
     if (tags.includes("STRONG") || tags.includes("B")) {
       const fw = window.getComputedStyle(nodeEl).fontWeight;
       const num = parseInt(fw, 10);
-      if (fw === "bold" || fw === "bolder" || num >= 600) return true;
+
+      // 🚫 Ignore bold detection if we're just inside a heading
+      const isHeading = /^H[1-6]$/.test(nodeEl.tagName);
+
+      if (!isHeading && (fw === "bold" || fw === "bolder" || num >= 600)) {
+        return true;
+      }
     }
+
+    // ✅ Italic check
     if (tags.includes("EM") || tags.includes("I")) {
       const fs = window.getComputedStyle(nodeEl).fontStyle;
       if (fs === "italic" || fs === "oblique") return true;
     }
+
     return false;
   };
+
 
   const updateToolbarState = () => {
     const block = getActiveBlockTag();
@@ -509,7 +521,7 @@ const BrandPreview: React.FC<BrandPreviewProps> = ({ name, value, onChange }) =>
     const heading = getActiveHeading();
     const fontFamily = getActiveFontFamily();
 
-    setActive({ bold, italic,underline, list, block, heading, fontFamily });
+    setActive({ bold, italic, underline, list, block, heading, fontFamily });
   };
 
   /* ---------- Events ---------- */
