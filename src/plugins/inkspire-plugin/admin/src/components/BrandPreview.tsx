@@ -14,6 +14,7 @@ interface ToolbarState {
   underline: boolean; // "P","H1","BLOCKQUOTE","UL","OL"
   heading?: HeadingType; // normalized for dropdown
   fontFamily?: string;
+  alignment?: "left" | "center" | "right";
 }
 interface BrandPreviewProps {
   name: string;
@@ -165,6 +166,24 @@ const Toolbar: React.FC<{
         aria-pressed={active.block === "BLOCKQUOTE"}
       >
         ❝ Quote
+      </button>
+      <button
+        style={active.alignment === "left" ? btnActive : btnBase}
+        onClick={() => onCommand("align", "left" as "left")}
+      >
+        ⬅ Left
+      </button>
+      <button
+        style={active.alignment === "center" ? btnActive : btnBase}
+        onClick={() => onCommand("align", "center" as "center")}
+      >
+        ⬍ Center
+      </button>
+      <button
+        style={active.alignment === "right" ? btnActive : btnBase}
+        onClick={() => onCommand("align", "right" as "right")}
+      >
+        ➡ Right
       </button>
     </div>
   );
@@ -397,6 +416,20 @@ const BrandPreview: React.FC<BrandPreviewProps> = ({ name, value, onChange }) =>
     // MODIFICATION: REMOVED `updateHtmlFromEditor()` here
   };
 
+  const applyAlignment = (alignment: "left" | "center" | "right") => {
+    const sel = window.getSelection();
+    const editor = editorRef.current;
+    if (!sel || sel.rangeCount === 0 || !editor) return;
+
+    const range = sel.getRangeAt(0);
+    const block = range.startContainer.parentElement;
+
+    if (block && editor.contains(block)) {
+      (block as HTMLElement).style.textAlign = alignment;
+    }
+  };
+
+
   /* ---------- State readers ---------- */
   const getActiveBlockTag = (): string | undefined => {
     const editor = editorRef.current;
@@ -515,14 +548,38 @@ const BrandPreview: React.FC<BrandPreviewProps> = ({ name, value, onChange }) =>
   const updateToolbarState = () => {
     const block = getActiveBlockTag();
     const list = getActiveListType();
+    const alignment = getActiveAlignment();
     const underline = isInlineActive(["U", "UNDERLINE"]);
     const bold = isInlineActive(["STRONG", "B"]);
     const italic = isInlineActive(["EM", "I"]);
     const heading = getActiveHeading();
     const fontFamily = getActiveFontFamily();
 
-    setActive({ bold, italic, underline, list, block, heading, fontFamily });
+    setActive({ bold, italic, underline,list, block, heading, fontFamily,alignment });
   };
+
+  const getActiveAlignment = (): "left" | "center" | "right" | undefined => {
+    const editor = editorRef.current;
+    const sel = window.getSelection();
+    if (!editor || !sel || sel.rangeCount === 0) return undefined;
+
+    const node = sel.anchorNode;
+    if (!node || !editor.contains(node)) return undefined;
+
+    const el = node.nodeType === Node.ELEMENT_NODE
+      ? (node as HTMLElement)
+      : (node.parentElement as HTMLElement | null);
+
+    if (!el) return undefined;
+
+    const block = el.closest("p,h1,h2,h3,h4,h5,h6,blockquote,div,li") as HTMLElement | null;
+    if (!block) return undefined;
+
+    const align = block.style.textAlign;
+    if (align === "center" || align === "right") return align;
+    return "left"; // default
+  };
+
 
   /* ---------- Events ---------- */
   useEffect(() => {
@@ -567,6 +624,7 @@ const BrandPreview: React.FC<BrandPreviewProps> = ({ name, value, onChange }) =>
     editorRef.current?.focus();
     restoreSelection();
 
+
     switch (cmd) {
       // Inline
       case "bold":
@@ -603,6 +661,10 @@ const BrandPreview: React.FC<BrandPreviewProps> = ({ name, value, onChange }) =>
       // Font
       case "font":
         if (val) applyFont(val);
+        break;
+
+      case "align":
+        if (val) applyAlignment(val as "left" | "center" | "right");
         break;
 
       default:
