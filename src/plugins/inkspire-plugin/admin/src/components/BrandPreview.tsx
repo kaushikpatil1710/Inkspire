@@ -1,5 +1,4 @@
 import React, { useEffect, useRef, useState } from "react";
-
 /* =========================
    Types & Toolbar state
    ========================= */
@@ -21,6 +20,7 @@ interface BrandPreviewProps {
   value: { html: string } | null;
   onChange: (event: { target: { name: string; value: any; type?: "json" } }) => void;
 }
+
 
 
 /* =========================
@@ -52,22 +52,24 @@ const Toolbar: React.FC<{
 
   const btnActive: React.CSSProperties = {
     ...btnBase,
-    background: "#2b6cb0",
-    borderColor: "#2b6cb0",
+    background: "#2b6cb0"
   };
 
   const selectBase: React.CSSProperties = {
-    padding: "8px 10px",
+    padding: "6px 8px",
     border: "1px solid #ddd",
-    borderRadius: 8,
+    borderRadius: 6,
     background: "#fff",
     color: "#111",
     cursor: "pointer",
-    fontSize: 14,
-    lineHeight: 1,
+    fontSize: 13,
+    lineHeight: 1.2,
     userSelect: "none",
     outline: "none",
+    width: "60px",
+    textOverflow: "ellipsis",
   };
+
 
   const handleBtn = (cmd: string, val?: string) => (e: React.MouseEvent) => {
     e.preventDefault();
@@ -280,6 +282,107 @@ const BrandPreview: React.FC<BrandPreviewProps> = ({ name, value, onChange }) =>
       : (node.parentElement as HTMLElement | null);
     return !!el?.closest(selector);
   };
+
+  function sanitizeHtml(html: string): string {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, "text/html");
+    const fragment = doc.body;
+
+    // Allowed tags and attributes
+    const ALLOWED_TAGS = new Set([
+      "P",
+      "BR",
+      "STRONG",
+      "B",
+      "EM",
+      "I",
+      "A",
+      "UL",
+      "OL",
+      "LI",
+      "BLOCKQUOTE",
+      "CODE",
+      "PRE",
+      "H1",
+      "H2",
+      "H3",
+      "H4",
+    ]);
+    const ALLOWED_A_ATTRIBUTES = new Set(["href", "target", "rel"]);
+
+    // Helper: unwrap node (replace with its children)
+    function unwrap(node: Element) {
+      const parent = node.parentNode;
+      if (!parent) return;
+      while (node.firstChild) {
+        parent.insertBefore(node.firstChild, node);
+      }
+      parent.removeChild(node);
+    }
+
+    // Walk nodes and clean
+    const nodes = Array.from(fragment.querySelectorAll("*"));
+    for (const node of nodes) {
+      const tag = node.tagName;
+
+      // Strip comments
+      if (node.nodeType === Node.COMMENT_NODE) {
+        node.remove();
+        continue;
+      }
+
+      // Handle <span> or inline styles
+      if (tag === "SPAN" || node.hasAttribute("style")) {
+        const style = node.getAttribute("style") || "";
+
+        // Clean NBSP-only spans
+        if (node.textContent && node.textContent.trim() === "\u00A0") {
+          node.remove();
+          continue;
+        }
+
+        // If it's a useless span with only text + style, unwrap it
+        const onlyTextChildren = Array.from(node.childNodes).every(
+          (n) => n.nodeType === Node.TEXT_NODE
+        );
+        const junkStylePattern =
+          /(font-family|font-size|color|line-height|font-weight|font-style)\s*:/i;
+
+        if (tag === "SPAN" && onlyTextChildren && junkStylePattern.test(style)) {
+          unwrap(node);
+          continue;
+        }
+
+        // Remove all inline styles otherwise
+        node.removeAttribute("style");
+      }
+
+      // Remove disallowed tags but keep children
+      if (!ALLOWED_TAGS.has(tag)) {
+        if (["IMG", "TABLE", "SCRIPT", "STYLE"].includes(tag)) {
+          node.remove();
+          continue;
+        }
+        unwrap(node);
+        continue;
+      }
+
+      // Clean <a> attributes
+      if (tag === "A") {
+        const attrs = Array.from(node.attributes);
+        for (const { name } of attrs) {
+          if (!ALLOWED_A_ATTRIBUTES.has(name)) node.removeAttribute(name);
+        }
+        if (!node.hasAttribute("rel"))
+          node.setAttribute("rel", "noopener noreferrer");
+        if (!node.hasAttribute("target")) node.setAttribute("target", "_blank");
+      }
+    }
+
+    // Replace &nbsp; with space and trim
+    const htmlOut = fragment.innerHTML.replace(/\u00A0/g, " ");
+    return htmlOut.trim();
+  }
 
   /* ---------- Visual defaults for headings/lists (inline; minimal) ---------- */
   const HEADING_STYLES: Record<string, Partial<CSSStyleDeclaration>> = {
@@ -567,6 +670,125 @@ const BrandPreview: React.FC<BrandPreviewProps> = ({ name, value, onChange }) =>
     return "left"; // default
   };
 
+  // Detect common URLs (http(s), www., bare domain with TLD)
+  const URL_REGEX =
+    /((https?:\/\/|www\.)[^\s<]+|(?:[a-z0-9-]+\.)+[a-z]{2,}(?:\/[^\s<]*)?)/gi;
+
+  // Elements we should NOT traverse/modify
+  const SKIP_TAGS = new Set(["A", "CODE", "PRE", "SCRIPT", "STYLE"]);
+
+  function linkifyTextNode(textNode: Text) {
+    const text = textNode.nodeValue || "";
+    if (!URL_REGEX.test(text)) return;
+
+    const frag = document.createDocumentFragment();
+    let lastIdx = 0;
+    text.replace(URL_REGEX, (match, _p1, _p2, offset) => {
+      // text before match
+      if (offset > lastIdx) {
+        frag.appendChild(document.createTextNode(text.slice(lastIdx, offset)));
+      }
+
+      // normalize href (add protocol if missing)
+      let href = match;
+      if (!/^https?:\/\//i.test(href)) {
+        href = href.startsWith("www.") ? `https://${href}` : `https://${href}`;
+      }
+
+      const a = document.createElement("a");
+      a.href = href;
+      a.textContent = match;
+      // Inline styles so it looks like a hyperlink inside the editor
+      a.style.color = "#2563eb";
+      a.style.textDecoration = "underline";
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+
+      frag.appendChild(a);
+      lastIdx = offset + match.length;
+      return match;
+    });
+
+    // remaining text after last match
+    if (lastIdx < text.length) {
+      frag.appendChild(document.createTextNode(text.slice(lastIdx)));
+    }
+
+    textNode.replaceWith(frag);
+  }
+
+  function walkAndLinkify(root: Node) {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+      acceptNode(node) {
+        const parent = node.parentElement;
+        if (!parent) return NodeFilter.FILTER_REJECT;
+        if (SKIP_TAGS.has(parent.tagName)) return NodeFilter.FILTER_REJECT;
+        // ignore empty/whitespace-only
+        if (!node.nodeValue || !node.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
+        return NodeFilter.FILTER_ACCEPT;
+      },
+    });
+    const toProcess: Text[] = [];
+    let n: Node | null;
+    while ((n = walker.nextNode())) {
+      toProcess.push(n as Text);
+    }
+    toProcess.forEach(linkifyTextNode);
+  }
+
+  /** Safely linkify the editor without losing the caret */
+  function autoLinkInEditor(editor: HTMLElement) {
+    const sel = window.getSelection();
+    let range: Range | null = null;
+    if (sel && sel.rangeCount > 0) {
+      range = sel.getRangeAt(0).cloneRange();
+    }
+
+    walkAndLinkify(editor);
+
+    // Try to restore caret if we had one
+    if (range && sel) {
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+  }
+
+  function handlePasteSanitize(
+    e: React.ClipboardEvent<HTMLDivElement>
+  ): void {
+    e.preventDefault();
+    const clipboard = e.clipboardData;
+    const html = clipboard.getData("text/html");
+    const txt = clipboard.getData("text/plain");
+
+    const cleaned = html
+      ? sanitizeHtml(html)
+      : (txt || "").replace(/\u00A0/g, " ");
+
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount) return;
+    const range = sel.getRangeAt(0);
+    range.deleteContents();
+
+    // Insert sanitized content
+    const temp = document.createElement("div");
+    temp.innerHTML = cleaned;
+    const frag = document.createDocumentFragment();
+    let node: ChildNode | null;
+    while ((node = temp.firstChild)) {
+      frag.appendChild(node);
+    }
+    range.insertNode(frag);
+
+    // Move caret to end
+    sel.removeAllRanges();
+    const newRange = document.createRange();
+    newRange.selectNodeContents(range.endContainer);
+    newRange.collapse(false);
+    sel.addRange(newRange);
+  }
+
+
 
 
   const updateToolbarState = () => {
@@ -720,8 +942,9 @@ const BrandPreview: React.FC<BrandPreviewProps> = ({ name, value, onChange }) =>
     marginBottom: 24,
     boxShadow: darkMode ? "none" : "0 2px 8px rgba(0,0,0,0.06)",
 
-    direction: "ltr",          // ✅ only direction, no bidi override
+    direction: "ltr", // ✅ only direction, no bidi override
   };
+
 
 
   const toggleBtn: React.CSSProperties = {
@@ -808,6 +1031,9 @@ const BrandPreview: React.FC<BrandPreviewProps> = ({ name, value, onChange }) =>
         spellCheck={false}
         onInput={(e) => {
           const newHtml = (e.target as HTMLDivElement).innerHTML;
+          const editor = editorRef.current;
+          if (!editor) return;
+          autoLinkInEditor(editor);
           setHtml(newHtml); // ✅ keeps preview live
           onChange({
             target: { name, value: { html: newHtml }, type: "json" },
@@ -822,6 +1048,18 @@ const BrandPreview: React.FC<BrandPreviewProps> = ({ name, value, onChange }) =>
               target: { name, value: { html: finalHtml }, type: "json" },
             });
           }
+        }}
+        onPaste={(e) => {
+          handlePasteSanitize(e);
+          // Let paste happen first, then linkify on next tick
+          requestAnimationFrame(() => {
+            const editor = editorRef.current;
+            if (!editor) return;
+            autoLinkInEditor(editor);
+            const newHtml = editor.innerHTML;
+            setHtml(newHtml);
+            onChange({ target: { name, value: { html: newHtml }, type: "json" } });
+          });
         }}
       />
 
