@@ -1,4 +1,24 @@
 import React, { useEffect, useRef, useState } from "react";
+import {
+  Theme,
+  toolbarStyle,
+  btnBase,
+  btnActive,
+  selectBase,
+  pageStyle,
+  editorBox,
+  toggleBtn,
+  previewsWrap,
+  desktopShell,
+  browserBar,
+  phoneShell,
+  phoneBar,
+  previewContent,
+  HEADING_STYLES
+} from "./styled";
+  import { createSelectionHelpers } from "../utils/Selection";
+  import { collectBlocksInRange,isInside } from "../utils/Dom";
+  import { getActiveAlignment,getActiveHeading,getActiveBlockTag,getActiveFontFamily,getActiveListType,isInlineActive,autoLinkInEditor,handlePasteSanitize } from "../utils/StateReaders";
 /* =========================
    Types & Toolbar state
    ========================= */
@@ -21,65 +41,28 @@ interface BrandPreviewProps {
   onChange: (event: { target: { name: string; value: any; type?: "json" } }) => void;
 }
 
+interface ToolbarProps {
+  onCommand: (cmd: string, val?: string) => void;
+  active: ToolbarState;
+  theme: Theme; // new prop
+}
+
 
 
 /* =========================
    Toolbar (inline styles kept)
    ========================= */
-const Toolbar: React.FC<{
-  onCommand: (cmd: string, val?: string) => void;
-  active: ToolbarState;
-}> = ({ onCommand, active }) => {
-  const toolbarStyle: React.CSSProperties = {
-    display: "flex",
-    gap: 8,
-    marginBottom: 12,
-    flexWrap: "wrap",
-  };
-
-  const btnBase: React.CSSProperties = {
-    padding: "8px 14px",
-    border: "1px solid #ddd",
-    borderRadius: 8,
-    background: "#111",
-    color: "#fff",
-    cursor: "pointer",
-    fontSize: 14,
-    lineHeight: 1,
-    userSelect: "none",
-    transition: "background .15s ease, color .15s ease",
-  };
-
-  const btnActive: React.CSSProperties = {
-    ...btnBase,
-    background: "#2b6cb0"
-  };
-
-  const selectBase: React.CSSProperties = {
-    padding: "6px 8px",
-    border: "1px solid #ddd",
-    borderRadius: 6,
-    background: "#fff",
-    color: "#111",
-    cursor: "pointer",
-    fontSize: 13,
-    lineHeight: 1.2,
-    userSelect: "none",
-    outline: "none",
-    width: "60px",
-    textOverflow: "ellipsis",
-  };
-
-
+const Toolbar: React.FC<ToolbarProps> = ({ onCommand, active, theme }) => {
   const handleBtn = (cmd: string, val?: string) => (e: React.MouseEvent) => {
     e.preventDefault();
     onCommand(cmd, val);
   };
 
+
   return (
     <div style={toolbarStyle}>
       <button
-        style={active.bold ? btnActive : btnBase}
+        style={active.bold ? (theme ? btnActive(theme) : btnBase) : btnBase}
         onClick={handleBtn("bold")}
         aria-pressed={active.bold}
         aria-label="Bold"
@@ -87,7 +70,7 @@ const Toolbar: React.FC<{
         B
       </button>
       <button
-        style={active.italic ? btnActive : btnBase}
+        style={active.italic ? (theme ? btnActive(theme) : btnBase) : btnBase}
         onClick={handleBtn("italic")}
         aria-pressed={active.italic}
         aria-label="Italic"
@@ -96,7 +79,7 @@ const Toolbar: React.FC<{
       </button>
 
       <button
-        style={active.underline ? btnActive : btnBase}
+        style={active.underline ? (theme ? btnActive(theme) : btnBase) : btnBase}
         onClick={handleBtn("underline")}
         aria-pressed={active.underline}
         aria-label="Underline"
@@ -163,7 +146,7 @@ const Toolbar: React.FC<{
 
       <button style={btnBase} onClick={handleBtn("codeblock")}>{"</> Code"}</button>
       <button
-        style={active.block === "BLOCKQUOTE" ? btnActive : btnBase}
+        style={active.block === "BLOCKQUOTE" ? (theme ? btnActive(theme) : btnBase) : btnBase}
         onClick={handleBtn("block", "blockquote")}
         aria-pressed={active.block === "BLOCKQUOTE"}
       >
@@ -199,6 +182,7 @@ const BrandPreview: React.FC<BrandPreviewProps> = ({ name, value, onChange }) =>
   const initialHtml = `<h2>Your Brand Story</h2><p>Start writing here...</p>`;
   const [darkMode, setDarkMode] = useState(false);
   const [html, setHtml] = useState<string>(value?.html ?? initialHtml);
+  const theme: Theme = { darkMode };
   const [active, setActive] = useState<ToolbarState>({
     bold: false,
     italic: false,
@@ -210,191 +194,13 @@ const BrandPreview: React.FC<BrandPreviewProps> = ({ name, value, onChange }) =>
   });
 
   const editorRef = useRef<HTMLDivElement | null>(null);
-  const savedRangeRef = useRef<Range | null>(null);
-
-  /* ---------- Selection utils ---------- */
-  const saveSelection = () => {
-    const sel = window.getSelection();
-    if (sel && sel.rangeCount > 0) savedRangeRef.current = sel.getRangeAt(0).cloneRange();
-  };
-
-  const restoreSelection = () => {
-    const sel = window.getSelection();
-    const r = savedRangeRef.current;
-    if (!sel || !r) return;
-    editorRef.current?.focus();
-    sel.removeAllRanges();
-    sel.addRange(r.cloneRange());
-  };
-
-  /* ---------- DOM helpers ---------- */
-  const isElement = (n: Node | null): n is HTMLElement =>
-    !!n && n.nodeType === Node.ELEMENT_NODE;
-
-  const getSelectionRoot = () => {
-    const sel = window.getSelection();
-    return sel && sel.rangeCount > 0 ? (sel.anchorNode as Node | null) : null;
-  };
+  const {
+    saveSelection,
+    restoreSelection,
+    clearSavedSelection,
+  }=React.useMemo(()=>createSelectionHelpers(editorRef),[editorRef])
 
 
-  const findAncestor = (
-    start: Node | null,
-    predicate: (el: HTMLElement) => boolean,
-    stopAt?: HTMLElement | null
-  ) => {
-    let n: Node | null = start;
-    while (n && n !== stopAt) {
-      if (isElement(n) && predicate(n)) return n;
-      n = n.parentNode;
-    }
-    return null;
-  };
-
-  const toEditorBlock = (node: Node, editor: HTMLElement): HTMLElement | null => {
-    let el: HTMLElement | null =
-      node.nodeType === Node.TEXT_NODE ? (node.parentElement as HTMLElement) : (node as HTMLElement);
-    while (el && el.parentElement !== editor) el = el.parentElement as HTMLElement;
-    return el && el.parentElement === editor ? el : null;
-  };
-
-  const collectBlocksInRange = (editor: HTMLElement, range: Range): HTMLElement[] => {
-    const start = toEditorBlock(range.startContainer, editor);
-    const end = toEditorBlock(range.endContainer, editor);
-    if (!start || !end) return [];
-    const blocks: HTMLElement[] = [];
-    let cur: HTMLElement | null = start;
-    while (cur) {
-      blocks.push(cur);
-      if (cur === end) break;
-      cur = cur.nextElementSibling as HTMLElement;
-    }
-    return blocks;
-  };
-
-  const isInside = (selector: string): boolean => {
-    const editor = editorRef.current;
-    const sel = window.getSelection();
-    if (!editor || !sel || sel.rangeCount === 0) return false;
-    const node = sel.anchorNode;
-    if (!node || !editor.contains(node)) return false;
-    const el = node.nodeType === Node.ELEMENT_NODE
-      ? (node as HTMLElement)
-      : (node.parentElement as HTMLElement | null);
-    return !!el?.closest(selector);
-  };
-
-  function sanitizeHtml(html: string): string {
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(html, "text/html");
-    const fragment = doc.body;
-
-    // Allowed tags and attributes
-    const ALLOWED_TAGS = new Set([
-      "P",
-      "BR",
-      "STRONG",
-      "B",
-      "EM",
-      "I",
-      "A",
-      "UL",
-      "OL",
-      "LI",
-      "BLOCKQUOTE",
-      "CODE",
-      "PRE",
-      "H1",
-      "H2",
-      "H3",
-      "H4",
-    ]);
-    const ALLOWED_A_ATTRIBUTES = new Set(["href", "target", "rel"]);
-
-    // Helper: unwrap node (replace with its children)
-    function unwrap(node: Element) {
-      const parent = node.parentNode;
-      if (!parent) return;
-      while (node.firstChild) {
-        parent.insertBefore(node.firstChild, node);
-      }
-      parent.removeChild(node);
-    }
-
-    // Walk nodes and clean
-    const nodes = Array.from(fragment.querySelectorAll("*"));
-    for (const node of nodes) {
-      const tag = node.tagName;
-
-      // Strip comments
-      if (node.nodeType === Node.COMMENT_NODE) {
-        node.remove();
-        continue;
-      }
-
-      // Handle <span> or inline styles
-      if (tag === "SPAN" || node.hasAttribute("style")) {
-        const style = node.getAttribute("style") || "";
-
-        // Clean NBSP-only spans
-        if (node.textContent && node.textContent.trim() === "\u00A0") {
-          node.remove();
-          continue;
-        }
-
-        // If it's a useless span with only text + style, unwrap it
-        const onlyTextChildren = Array.from(node.childNodes).every(
-          (n) => n.nodeType === Node.TEXT_NODE
-        );
-        const junkStylePattern =
-          /(font-family|font-size|color|line-height|font-weight|font-style)\s*:/i;
-
-        if (tag === "SPAN" && onlyTextChildren && junkStylePattern.test(style)) {
-          unwrap(node);
-          continue;
-        }
-
-        // Remove all inline styles otherwise
-        node.removeAttribute("style");
-      }
-
-      // Remove disallowed tags but keep children
-      if (!ALLOWED_TAGS.has(tag)) {
-        if (["IMG", "TABLE", "SCRIPT", "STYLE"].includes(tag)) {
-          node.remove();
-          continue;
-        }
-        unwrap(node);
-        continue;
-      }
-
-      // Clean <a> attributes
-      if (tag === "A") {
-        const attrs = Array.from(node.attributes);
-        for (const { name } of attrs) {
-          if (!ALLOWED_A_ATTRIBUTES.has(name)) node.removeAttribute(name);
-        }
-        if (!node.hasAttribute("rel"))
-          node.setAttribute("rel", "noopener noreferrer");
-        if (!node.hasAttribute("target")) node.setAttribute("target", "_blank");
-      }
-    }
-
-    // Replace &nbsp; with space and trim
-    const htmlOut = fragment.innerHTML.replace(/\u00A0/g, " ");
-    return htmlOut.trim();
-  }
-
-  /* ---------- Visual defaults for headings/lists (inline; minimal) ---------- */
-  const HEADING_STYLES: Record<string, Partial<CSSStyleDeclaration>> = {
-    h1: { fontSize: "2rem", fontWeight: "700", margin: "0.6em 0 0.4em" },
-    h2: { fontSize: "1.5rem", fontWeight: "700", margin: "0.6em 0 0.4em" },
-    h3: { fontSize: "1.25rem", fontWeight: "600", margin: "0.6em 0 0.4em" },
-    h4: { fontSize: "1.125rem", fontWeight: "600", margin: "0.6em 0 0.4em" },
-    h5: { fontSize: "1rem", fontWeight: "600", margin: "0.6em 0 0.4em" },
-    h6: { fontSize: "0.95rem", fontWeight: "600", margin: "0.6em 0 0.4em" },
-    p: { fontSize: "1rem", fontWeight: "400", margin: "0.6em 0 0.6em" },
-    blockquote: { margin: "1em 1.5em", paddingLeft: "1em", borderLeft: "3px solid #d0d7de" },
-  };
 
   // --- MODIFICATION: REMOVE `updateHtmlFromEditor` ---
   // We will now read from the DOM directly when needed.
@@ -464,7 +270,7 @@ const BrandPreview: React.FC<BrandPreviewProps> = ({ name, value, onChange }) =>
 
   // Replace selected blocks with a new tag (p, h1..h6, blockquote)
   const applyBlockFormat = (tag: string) => {
-    if (isInside("pre")) return; // don't retag inside code blocks
+    if (isInside(editorRef.current!,"pre")) return; // don't retag inside code blocks
     restoreSelection();
     const sel = window.getSelection();
     const editor = editorRef.current;
@@ -492,7 +298,7 @@ const BrandPreview: React.FC<BrandPreviewProps> = ({ name, value, onChange }) =>
 
   // Wrap selected blocks into a list (ul/ol)
   const applyList = (listType: "ul" | "ol") => {
-    if (isInside("pre")) return; // don't list-wrap code
+    if (isInside(editorRef.current!,"pre")) return; // don't list-wrap code
     restoreSelection();
     const sel = window.getSelection();
     const editor = editorRef.current;
@@ -532,281 +338,19 @@ const BrandPreview: React.FC<BrandPreviewProps> = ({ name, value, onChange }) =>
       (block as HTMLElement).style.textAlign = alignment;
     }
   };
-
-
-  /* ---------- State readers ---------- */
-  const getActiveBlockTag = (): string | undefined => {
-    const editor = editorRef.current;
-    const sel = window.getSelection();
-    if (!editor || !sel || sel.rangeCount === 0) return undefined;
-
-    const node = sel.anchorNode;
-    if (!node || !editor.contains(node)) return undefined;
-
-    const el =
-      node.nodeType === Node.ELEMENT_NODE
-        ? (node as HTMLElement)
-        : (node.parentElement as HTMLElement | null);
-
-    if (!el) return undefined;
-
-    const block = el.closest("ul,ol,blockquote,h1,h2,h3,h4,h5,h6,p,div,li") as HTMLElement | null;
-    if (!block) return undefined;
-
-    if (block.tagName === "LI" && block.parentElement) {
-      return block.parentElement.tagName; // "UL" or "OL"
-    }
-    return block.tagName; // "P","H2","BLOCKQUOTE", etc.
-  };
-
-  const blockTagToHeading = (tag?: string): HeadingType => {
-    if (!tag) return undefined;
-    const t = tag.toUpperCase();
-    if (t === "P" || t === "DIV") return "p";
-    if (/^H[1-6]$/.test(t)) return t.toLowerCase() as HeadingType;
-    return undefined;
-  };
-
-  const getActiveHeading = (): HeadingType => {
-    const tag = getActiveBlockTag();
-    if (!tag) return undefined;
-    if (tag === "BLOCKQUOTE" || tag === "UL" || tag === "OL") return undefined;
-    return blockTagToHeading(tag);
-  };
-
-  const getActiveListType = (): ListType => {
-    const editor = editorRef.current;
-    const sel = window.getSelection();
-    if (!editor || !sel || sel.rangeCount === 0) return undefined;
-
-    const node = sel.anchorNode;
-    if (!node || !editor.contains(node)) return undefined;
-
-    const el = node.nodeType === Node.ELEMENT_NODE
-      ? (node as HTMLElement)
-      : (node.parentElement as HTMLElement | null);
-
-    if (!el) return undefined;
-
-    const list = el.closest("ul,ol") as HTMLElement | null;
-    if (!list) return undefined;
-    return list.tagName === "UL" ? "ul" : "ol";
-  };
-
-  const getActiveFontFamily = (): string | undefined => {
-    const editor = editorRef.current;
-    const sel = window.getSelection();
-    if (!editor || !sel || sel.rangeCount === 0) return undefined;
-    const node = sel.anchorNode as Node;
-    if (!editor.contains(node)) return undefined;
-
-    const el =
-      (node.nodeType === Node.ELEMENT_NODE ? (node as HTMLElement) : (node.parentElement as HTMLElement)) || editor;
-    const fam = (window.getComputedStyle(el).fontFamily || "").trim();
-
-    const known = [
-      { label: "Times New Roman", match: "Times New Roman" },
-      { label: "Arial", match: "Arial" },
-      { label: "Georgia", match: "Georgia" },
-      { label: "Courier New", match: "Courier New" },
-    ];
-    const hit = known.find((k) => fam.toLowerCase().includes(k.match.toLowerCase()));
-    return hit ? hit.label : fam || undefined;
-  };
-
-  const isInlineActive = (tags: string[]) => {
-    const editor = editorRef.current;
-    const root = getSelectionRoot();
-    if (!editor || !root || !editor.contains(root)) return false;
-
-    // ✅ If inside an actual <b> or <strong> (or matching tag), it's bold
-    const el = findAncestor(root, (e) => tags.includes(e.tagName), editor);
-    if (el) return true;
-
-    const nodeEl = findAncestor(root, (e) => !!e, editor) as HTMLElement | null;
-    if (!nodeEl) return false;
-
-    // ✅ Bold check
-    if (tags.includes("STRONG") || tags.includes("B")) {
-      const fw = window.getComputedStyle(nodeEl).fontWeight;
-      const num = parseInt(fw, 10);
-
-      // 🚫 Ignore bold detection if we're just inside a heading
-      const isHeading = /^H[1-6]$/.test(nodeEl.tagName);
-
-      if (!isHeading && (fw === "bold" || fw === "bolder" || num >= 600)) {
-        return true;
-      }
-    }
-
-    // ✅ Italic check
-    if (tags.includes("EM") || tags.includes("I")) {
-      const fs = window.getComputedStyle(nodeEl).fontStyle;
-      if (fs === "italic" || fs === "oblique") return true;
-    }
-
-    return false;
-  };
-
-  const getActiveAlignment = (): "left" | "center" | "right" | undefined => {
-    const editor = editorRef.current;
-    const sel = window.getSelection();
-    if (!editor || !sel || sel.rangeCount === 0) return undefined;
-
-    const node = sel.anchorNode;
-    if (!node || !editor.contains(node)) return undefined;
-
-    const el = node.nodeType === Node.ELEMENT_NODE
-      ? (node as HTMLElement)
-      : (node.parentElement as HTMLElement | null);
-
-    if (!el) return undefined;
-
-    const block = el.closest("p,h1,h2,h3,h4,h5,h6,blockquote,div,li") as HTMLElement | null;
-    if (!block) return undefined;
-
-    const align = block.style.textAlign;
-    if (align === "center" || align === "right") return align;
-    return "left"; // default
-  };
-
-  // Detect common URLs (http(s), www., bare domain with TLD)
-  const URL_REGEX =
-    /((https?:\/\/|www\.)[^\s<]+|(?:[a-z0-9-]+\.)+[a-z]{2,}(?:\/[^\s<]*)?)/gi;
-
-  // Elements we should NOT traverse/modify
-  const SKIP_TAGS = new Set(["A", "CODE", "PRE", "SCRIPT", "STYLE"]);
-
-  function linkifyTextNode(textNode: Text) {
-    const text = textNode.nodeValue || "";
-    if (!URL_REGEX.test(text)) return;
-
-    const frag = document.createDocumentFragment();
-    let lastIdx = 0;
-    text.replace(URL_REGEX, (match, _p1, _p2, offset) => {
-      // text before match
-      if (offset > lastIdx) {
-        frag.appendChild(document.createTextNode(text.slice(lastIdx, offset)));
-      }
-
-      // normalize href (add protocol if missing)
-      let href = match;
-      if (!/^https?:\/\//i.test(href)) {
-        href = href.startsWith("www.") ? `https://${href}` : `https://${href}`;
-      }
-
-      const a = document.createElement("a");
-      a.href = href;
-      a.textContent = match;
-      // Inline styles so it looks like a hyperlink inside the editor
-      a.style.color = "#2563eb";
-      a.style.textDecoration = "underline";
-      a.target = "_blank";
-      a.rel = "noopener noreferrer";
-
-      frag.appendChild(a);
-      lastIdx = offset + match.length;
-      return match;
-    });
-
-    // remaining text after last match
-    if (lastIdx < text.length) {
-      frag.appendChild(document.createTextNode(text.slice(lastIdx)));
-    }
-
-    textNode.replaceWith(frag);
-  }
-
-  function walkAndLinkify(root: Node) {
-    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
-      acceptNode(node) {
-        const parent = node.parentElement;
-        if (!parent) return NodeFilter.FILTER_REJECT;
-        if (SKIP_TAGS.has(parent.tagName)) return NodeFilter.FILTER_REJECT;
-        // ignore empty/whitespace-only
-        if (!node.nodeValue || !node.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
-        return NodeFilter.FILTER_ACCEPT;
-      },
-    });
-    const toProcess: Text[] = [];
-    let n: Node | null;
-    while ((n = walker.nextNode())) {
-      toProcess.push(n as Text);
-    }
-    toProcess.forEach(linkifyTextNode);
-  }
-
-  /** Safely linkify the editor without losing the caret */
-  function autoLinkInEditor(editor: HTMLElement) {
-    const sel = window.getSelection();
-    let range: Range | null = null;
-    if (sel && sel.rangeCount > 0) {
-      range = sel.getRangeAt(0).cloneRange();
-    }
-
-    walkAndLinkify(editor);
-
-    // Try to restore caret if we had one
-    if (range && sel) {
-      sel.removeAllRanges();
-      sel.addRange(range);
-    }
-  }
-
-  function handlePasteSanitize(
-    e: React.ClipboardEvent<HTMLDivElement>
-  ): void {
-    e.preventDefault();
-    const clipboard = e.clipboardData;
-    const html = clipboard.getData("text/html");
-    const txt = clipboard.getData("text/plain");
-
-    const cleaned = html
-      ? sanitizeHtml(html)
-      : (txt || "").replace(/\u00A0/g, " ");
-
-    const sel = window.getSelection();
-    if (!sel || !sel.rangeCount) return;
-    const range = sel.getRangeAt(0);
-    range.deleteContents();
-
-    // Insert sanitized content
-    const temp = document.createElement("div");
-    temp.innerHTML = cleaned;
-    const frag = document.createDocumentFragment();
-    let node: ChildNode | null;
-    while ((node = temp.firstChild)) {
-      frag.appendChild(node);
-    }
-    range.insertNode(frag);
-
-    // Move caret to end
-    sel.removeAllRanges();
-    const newRange = document.createRange();
-    newRange.selectNodeContents(range.endContainer);
-    newRange.collapse(false);
-    sel.addRange(newRange);
-  }
-
-
-
-
   const updateToolbarState = () => {
-    const block = getActiveBlockTag();
-    const list = getActiveListType();
-    const alignment = getActiveAlignment();
-    const underline = isInlineActive(["U", "UNDERLINE"]);
-    const bold = isInlineActive(["STRONG", "B"]);
-    const italic = isInlineActive(["EM", "I"]);
-    const heading = getActiveHeading();
-    const fontFamily = getActiveFontFamily();
+    const editor=editorRef.current
+    const block = getActiveBlockTag(editor);
+    const list = getActiveListType(editor);
+    const alignment = getActiveAlignment(editor);
+    const underline = isInlineActive(editor,["U", "UNDERLINE"]);
+    const bold = isInlineActive(editor,["STRONG", "B"]);
+    const italic = isInlineActive(editor,["EM", "I"]);
+    const heading = getActiveHeading(editor);
+    const fontFamily = getActiveFontFamily(editor);
 
     setActive({ bold, italic, underline, list, block, heading, fontFamily, alignment });
   };
-
-
-
-
   /* ---------- Events ---------- */
   useEffect(() => {
     const ed = editorRef.current;
@@ -821,14 +365,15 @@ const BrandPreview: React.FC<BrandPreviewProps> = ({ name, value, onChange }) =>
     ed.addEventListener("mouseup", onInteract);
     ed.addEventListener("keyup", onInteract);
     ed.addEventListener("input", onInteract);
-    document.addEventListener("selectionchange", updateToolbarState);
+    document.addEventListener("selectionchange", onInteract);
     return () => {
       ed.removeEventListener("mouseup", onInteract);
       ed.removeEventListener("keyup", onInteract);
       ed.removeEventListener("input", onInteract);
-      document.removeEventListener("selectionchange", updateToolbarState);
+      document.removeEventListener("selectionchange", onInteract);
+      clearSavedSelection();
     };
-  }, []);
+  }, [saveSelection,clearSavedSelection]);
 
   // --- MODIFICATION: Initialize the editor's content from the value prop ---
   useEffect(() => {
@@ -849,7 +394,8 @@ const BrandPreview: React.FC<BrandPreviewProps> = ({ name, value, onChange }) =>
     // keep focus & selection alive
     editorRef.current?.focus();
     restoreSelection();
-
+    saveSelection();
+    updateToolbarState();
 
     switch (cmd) {
       // Inline
@@ -922,90 +468,7 @@ const BrandPreview: React.FC<BrandPreviewProps> = ({ name, value, onChange }) =>
   }, [value, initialHtml]);
 
   /* ---------- Inline styles (kept) ---------- */
-  const pageStyle: React.CSSProperties = {
-    fontFamily: "Inter, system-ui, sans-serif",
-    color: darkMode ? "#f5f5f5" : "#111",
-    background: darkMode ? "#0f1216" : "#fafafa",
-    minHeight: "100vh",
-    padding: 20,
-  };
-
-  const editorBox: React.CSSProperties = {
-    border: "1px solid #d0d7de",
-    background: darkMode ? "#111418" : "#fff",
-    color: darkMode ? "#f5f5f5" : "#111",
-    borderRadius: 10,
-    padding: 16,
-    minHeight: 220,
-    textAlign: "left",
-    outline: "none",
-    marginBottom: 24,
-    boxShadow: darkMode ? "none" : "0 2px 8px rgba(0,0,0,0.06)",
-
-    direction: "ltr", // ✅ only direction, no bidi override
-  };
-
-
-
-  const toggleBtn: React.CSSProperties = {
-    padding: "8px 12px",
-    border: "1px solid #d0d7de",
-    borderRadius: 8,
-    background: darkMode ? "#222" : "#fff",
-    color: darkMode ? "#eee" : "#111",
-    cursor: "pointer",
-    marginBottom: 20,
-  };
-
-  const previewsWrap: React.CSSProperties = {
-    display: "flex",
-    gap: "20px",
-    justifyContent: "center",
-    marginTop: 20,
-  };
-
-  const desktopShell: React.CSSProperties = {
-    width: 600,
-    border: "1px solid #ccc",
-    borderRadius: 12,
-    overflow: "hidden",
-    background: darkMode ? "#111418" : "#fff",
-    boxShadow: "0 6px 18px rgba(0,0,0,0.08)",
-  };
-
-  const browserBar: React.CSSProperties = {
-    background: darkMode ? "#1b1f24" : "#f5f5f5",
-    display: "flex",
-    justifyContent: "center",
-    alignItems: "center",
-    padding: "8px 12px",
-    borderBottom: "1px solid #ccc",
-  };
-
-  const phoneShell: React.CSSProperties = {
-    width: 375,
-    border: "1px solid #ccc",
-    borderRadius: 24,
-    background: darkMode ? "#111418" : "#fff",
-    overflow: "hidden",
-    boxShadow: "0 8px 20px rgba(0,0,0,0.1)",
-  };
-
-  const phoneBar: React.CSSProperties = {
-    background: darkMode ? "#1b1f24" : "#f5f5f5",
-    padding: "6px",
-    textAlign: "center",
-  };
-
-  const previewContent: React.CSSProperties = {
-    padding: 16,
-    minHeight: 300,
-    lineHeight: 1.6,
-    color: darkMode ? "#f5f5f5" : "#111",
-    textAlign: "left",
-    whiteSpace: "pre-wrap",
-    wordBreak: "break-word",
-  };
+  
 
   // --- MODIFICATION: Sync content on blur to handle un-forced changes ---
   const handleBlur = () => {
@@ -1019,13 +482,13 @@ const BrandPreview: React.FC<BrandPreviewProps> = ({ name, value, onChange }) =>
 
 
   return (
-    <div style={pageStyle}>
-      <Toolbar onCommand={onCommand} active={active} />
+    <div style={pageStyle(theme)}>
+      <Toolbar onCommand={onCommand} active={active} theme={theme} />
 
       <div
         id="editor"
         ref={editorRef}
-        style={editorBox}
+        style={editorBox(theme)}
         contentEditable
         suppressContentEditableWarning
         spellCheck={false}
@@ -1063,17 +526,17 @@ const BrandPreview: React.FC<BrandPreviewProps> = ({ name, value, onChange }) =>
         }}
       />
 
-      <button style={toggleBtn} onClick={() => setDarkMode(!darkMode)}>
+      <button style={toggleBtn(theme)} onClick={() => setDarkMode(!darkMode)}>
         {darkMode ? "🌙 Dark" : "☀️ Light"}
       </button>
 
       <div style={previewsWrap}>
-        <div style={desktopShell}>
-          <div style={browserBar}>📸</div>
-          <div style={previewContent} dangerouslySetInnerHTML={{ __html: html }} />
+        <div style={desktopShell(theme)}>
+          <div style={browserBar(theme)}>📸</div>
+          <div style={previewContent(theme)} dangerouslySetInnerHTML={{ __html: html }} />
         </div>
-        <div style={phoneShell}>
-          <div style={phoneBar}>───</div>
+        <div style={phoneShell(theme)}>
+          <div style={phoneBar(theme)}>───</div>
           <div
             style={{ ...previewContent, minHeight: 500 }}
             dangerouslySetInnerHTML={{ __html: html }}
@@ -1083,5 +546,4 @@ const BrandPreview: React.FC<BrandPreviewProps> = ({ name, value, onChange }) =>
     </div>
   );
 };
-
 export default BrandPreview;
