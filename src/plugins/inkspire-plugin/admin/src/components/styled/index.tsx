@@ -138,3 +138,29 @@ export  const HEADING_STYLES: Record<string, Partial<CSSStyleDeclaration>> = {
     p: { fontSize: "1rem", fontWeight: "400", margin: "0.6em 0 0.6em" },
     blockquote: { margin: "1em 1.5em", paddingLeft: "1em", borderLeft: "3px solid #d0d7de" },
   };
+
+  export const backdropStyle: React.CSSProperties = {
+  position: "fixed",
+  inset: 0,
+  background: "rgba(0,0,0,0.45)",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  zIndex: 9999,
+};
+
+export const panelStyle: React.CSSProperties = {
+  width: 520,
+  maxWidth: "90%",
+  background: "#fff",
+  borderRadius: 8,
+  padding: 20,
+  boxShadow: "0 8px 30px rgba(0,0,0,0.2)",
+};
+
+export const footerStyle: React.CSSProperties = {
+  display: "flex",
+  gap: 10,
+  justifyContent: "flex-end",
+  marginTop: 16,
+};

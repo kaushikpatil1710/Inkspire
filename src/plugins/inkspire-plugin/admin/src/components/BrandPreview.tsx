@@ -16,9 +16,10 @@ import {
   previewContent,
   HEADING_STYLES
 } from "./styled";
-  import { createSelectionHelpers } from "../utils/Selection";
-  import { collectBlocksInRange,isInside } from "../utils/Dom";
-  import { getActiveAlignment,getActiveHeading,getActiveBlockTag,getActiveFontFamily,getActiveListType,isInlineActive,autoLinkInEditor,handlePasteSanitize } from "../utils/StateReaders";
+import { createSelectionHelpers } from "../utils/Selection";
+import { collectBlocksInRange, isInside } from "../utils/Dom";
+import { getActiveAlignment, getActiveHeading, getActiveBlockTag, getActiveFontFamily, getActiveListType, isInlineActive, autoLinkInEditor, handlePasteSanitize, attachExternalLinkGuard } from "../utils/StateReaders";
+import ConfirmExternalLink from "./Alert";
 /* =========================
    Types & Toolbar state
    ========================= */
@@ -183,6 +184,9 @@ const BrandPreview: React.FC<BrandPreviewProps> = ({ name, value, onChange }) =>
   const [darkMode, setDarkMode] = useState(false);
   const [html, setHtml] = useState<string>(value?.html ?? initialHtml);
   const theme: Theme = { darkMode };
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [pendingHref, setPendingHref] = useState<string | null>(null);
+  const confirmResolverRef = useRef<((ok: boolean) => void) | null>(null);
   const [active, setActive] = useState<ToolbarState>({
     bold: false,
     italic: false,
@@ -198,7 +202,24 @@ const BrandPreview: React.FC<BrandPreviewProps> = ({ name, value, onChange }) =>
     saveSelection,
     restoreSelection,
     clearSavedSelection,
-  }=React.useMemo(()=>createSelectionHelpers(editorRef),[editorRef])
+  } = React.useMemo(() => createSelectionHelpers(editorRef), [editorRef])
+
+  const showConfirmForHref = (href: string): Promise<boolean> => {
+    return new Promise((resolve) => {
+      setPendingHref(href);
+      confirmResolverRef.current = resolve;
+      setConfirmOpen(true);
+    });
+  };
+
+  // when the modal closes, resolver is called
+  const handleConfirmClose = (result: boolean) => {
+    setConfirmOpen(false);
+    const r = confirmResolverRef.current;
+    confirmResolverRef.current = null;
+    setPendingHref(null);
+    if (r) r(result);
+  };
 
 
 
@@ -270,7 +291,7 @@ const BrandPreview: React.FC<BrandPreviewProps> = ({ name, value, onChange }) =>
 
   // Replace selected blocks with a new tag (p, h1..h6, blockquote)
   const applyBlockFormat = (tag: string) => {
-    if (isInside(editorRef.current!,"pre")) return; // don't retag inside code blocks
+    if (isInside(editorRef.current!, "pre")) return; // don't retag inside code blocks
     restoreSelection();
     const sel = window.getSelection();
     const editor = editorRef.current;
@@ -298,7 +319,7 @@ const BrandPreview: React.FC<BrandPreviewProps> = ({ name, value, onChange }) =>
 
   // Wrap selected blocks into a list (ul/ol)
   const applyList = (listType: "ul" | "ol") => {
-    if (isInside(editorRef.current!,"pre")) return; // don't list-wrap code
+    if (isInside(editorRef.current!, "pre")) return; // don't list-wrap code
     restoreSelection();
     const sel = window.getSelection();
     const editor = editorRef.current;
@@ -339,13 +360,13 @@ const BrandPreview: React.FC<BrandPreviewProps> = ({ name, value, onChange }) =>
     }
   };
   const updateToolbarState = () => {
-    const editor=editorRef.current
+    const editor = editorRef.current
     const block = getActiveBlockTag(editor);
     const list = getActiveListType(editor);
     const alignment = getActiveAlignment(editor);
-    const underline = isInlineActive(editor,["U", "UNDERLINE"]);
-    const bold = isInlineActive(editor,["STRONG", "B"]);
-    const italic = isInlineActive(editor,["EM", "I"]);
+    const underline = isInlineActive(editor, ["U", "UNDERLINE"]);
+    const bold = isInlineActive(editor, ["STRONG", "B"]);
+    const italic = isInlineActive(editor, ["EM", "I"]);
     const heading = getActiveHeading(editor);
     const fontFamily = getActiveFontFamily(editor);
 
@@ -373,7 +394,7 @@ const BrandPreview: React.FC<BrandPreviewProps> = ({ name, value, onChange }) =>
       document.removeEventListener("selectionchange", onInteract);
       clearSavedSelection();
     };
-  }, [saveSelection,clearSavedSelection]);
+  }, [saveSelection, clearSavedSelection]);
 
   // --- MODIFICATION: Initialize the editor's content from the value prop ---
   useEffect(() => {
@@ -386,6 +407,13 @@ const BrandPreview: React.FC<BrandPreviewProps> = ({ name, value, onChange }) =>
     }
     updateToolbarState();
   }, [value, initialHtml]);
+
+  useEffect(() => {
+    const ed = editorRef.current;
+    if (!ed) return;
+    const cleanup = attachExternalLinkGuard(ed, showConfirmForHref);
+    return () => cleanup();
+  }, [editorRef.current]);
 
   // --- MODIFICATION: REMOVED the `handleInput` function ---
 
@@ -468,7 +496,7 @@ const BrandPreview: React.FC<BrandPreviewProps> = ({ name, value, onChange }) =>
   }, [value, initialHtml]);
 
   /* ---------- Inline styles (kept) ---------- */
-  
+
 
   // --- MODIFICATION: Sync content on blur to handle un-forced changes ---
   const handleBlur = () => {
@@ -543,6 +571,7 @@ const BrandPreview: React.FC<BrandPreviewProps> = ({ name, value, onChange }) =>
           />
         </div>
       </div>
+      <ConfirmExternalLink open={confirmOpen} href={pendingHref} onClose={handleConfirmClose} />
     </div>
   );
 };
