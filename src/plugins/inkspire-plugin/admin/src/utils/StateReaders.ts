@@ -1,8 +1,10 @@
 import {
     getSelectionRoot,
     findAncestor,
-    sanitizeHtml
+    sanitizeHtml,
+    collectBlocksInRange
 } from "./Dom";
+import { HOVER_STYLE } from "../components/styled";
 export type ListType = "ul" | "ol" | undefined;
 export type HeadingType = "p" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | undefined;
 const SKIP_TAGS = new Set(["A", "CODE", "PRE", "SCRIPT", "STYLE"]);
@@ -74,37 +76,51 @@ export const getActiveFontFamily = (editor: HTMLElement | null): string | undefi
 };
 
 export const isInlineActive = (editor: HTMLElement | null, tags: string[]): boolean => {
-    if (!editor) return false;
-    const root = getSelectionRoot();
-    if (!root || !editor.contains(root)) return false;
+  if (!editor) return false;
 
-    const el = findAncestor(root, (e) => tags.includes(e.tagName), editor);
-    if (el) return true;
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return false;
 
-    const nodeEl = findAncestor(root, (e) => !!e, editor) as HTMLElement | null;
-    if (!nodeEl) return false;
+  const range = sel.getRangeAt(0);
+  const rootNode = getSelectionRoot();
+  if (!rootNode || !editor.contains(rootNode)) return false;
 
-    if (tags.includes("STRONG") || tags.includes("B")) {
-        const fw = window.getComputedStyle(nodeEl).fontWeight;
-        const num = parseInt(fw, 10);
-        const isHeading = /^H[1-6]$/.test(nodeEl.tagName);
-        if (!isHeading && (fw === "bold" || fw === "bolder" || num >= 600)) {
-            return true;
-        }
+  try {
+    const blocks = collectBlocksInRange(editor, range);
+    if (blocks.length > 1) {
+      return false;
     }
+  } catch (err) {
+        console.log(err)
+  }
 
-    if (tags.includes("EM") || tags.includes("I")) {
-        const fs = window.getComputedStyle(nodeEl).fontStyle;
-        if (fs === "italic" || fs === "oblique") return true;
-    }
+  const el = findAncestor(rootNode, (e) => tags.includes(e.tagName), editor);
+  if (el) return true;
+  const nodeEl = findAncestor(rootNode, (e) => !!e, editor) as HTMLElement | null;
+  if (!nodeEl) return false;
 
-    if (tags.includes("U") || tags.includes("UNDERLINE")) {
-        const td = window.getComputedStyle(nodeEl).textDecorationLine || "";
-        if (td.includes("underline")) return true;
-    }
-
+  if (/^H[1-6]$/.test(nodeEl.tagName)) {
     return false;
+  }
+  if (tags.includes("STRONG") || tags.includes("B")) {
+    const fw = window.getComputedStyle(nodeEl).fontWeight || "";
+    const num = parseInt(fw, 10);
+    if (fw === "bold" || fw === "bolder" || (!isNaN(num) && num >= 600)) {
+      return true;
+    }
+  }
+  if (tags.includes("EM") || tags.includes("I")) {
+    const fs = window.getComputedStyle(nodeEl).fontStyle || "";
+    if (fs === "italic" || fs === "oblique") return true;
+  }
+  if (tags.includes("U") || tags.includes("UNDERLINE")) {
+    const td = (window.getComputedStyle(nodeEl).textDecorationLine || "").toLowerCase();
+    if (td.includes("underline")) return true;
+  }
+
+  return false;
 };
+
 
 export const getActiveAlignment = (editor: HTMLElement | null): "left" | "center" | "right" | undefined => {
     if (!editor) return undefined;
@@ -193,45 +209,114 @@ export function autoLinkInEditor(editor: HTMLElement) {
 }
 
 export type LinkConfirmFn = (href: string) => Promise<boolean>;
-
 export function attachExternalLinkGuard(
-    editor: HTMLElement | null,
-    confirmFn?: LinkConfirmFn
+  editor: HTMLElement | null,
+  confirmFn?: LinkConfirmFn
 ): () => void {
-    if (!editor) return () => { };
+  if (!editor) return () => {};
 
-    const _confirmFn: LinkConfirmFn =
-        confirmFn ||
-        (async (href: string) => {
-            return Promise.resolve(window.confirm(`Open external link?\n\n${href}`));
-        });
+  const _confirmFn: LinkConfirmFn =
+    confirmFn ||
+    (async (href: string) => {
+      return Promise.resolve(window.confirm(`Open external link?\n\n${href}`));
+    });
 
-    const onClick = async (ev: MouseEvent) => {
-        const target = ev.target as Element | null;
-        if (!target) return;
-        const anchor = (target.closest && target.closest("a")) as HTMLAnchorElement | null;
-        if (!anchor) return;
-        const href = anchor.getAttribute("href");
-        if (!href) return;
-        if (!(ev.ctrlKey || ev.metaKey)) return;
-        ev.preventDefault();
-        ev.stopPropagation();
+  const applyHover = (a: HTMLElement) => {
+    if (a.getAttribute("data-inkspire-hover")) return;
+    a.setAttribute("data-inkspire-hover", "1");
+    (a as any).__inkspire_prev_style = a.getAttribute("style") || "";
+    Object.assign(a.style, HOVER_STYLE);
+  };
 
-        try {
-            const ok = await _confirmFn(href);
-            if (ok) {
-                window.open(href, "_blank", "noopener,noreferrer");
-            }
-        } catch (err) {
-            console.warn("Link guard confirmFn failed", err);
+  const removeHover = (a: HTMLElement) => {
+    if (!a.getAttribute("data-inkspire-hover")) return;
+    a.removeAttribute("data-inkspire-hover");
+    const prev = (a as any).__inkspire_prev_style;
+    if (typeof prev === "string") a.setAttribute("style", prev || "");
+    else a.removeAttribute("style");
+    delete (a as any).__inkspire_prev_style;
+  };
+  const onClick = async (ev: MouseEvent) => {
+    // Ignore if event already prevented
+    if (ev.defaultPrevented) return;
+
+    const target = ev.target as Element | null;
+    if (!target) return;
+    const anchor = (target.closest && target.closest("a")) as HTMLAnchorElement | null;
+    if (!anchor || !editor.contains(anchor)) return;
+
+    try {
+      const sel = window.getSelection();
+      if (sel && !sel.isCollapsed) {
+        const range = sel.getRangeAt(0);
+        if (range && range.intersectsNode && range.intersectsNode(anchor)) {
+          return;
         }
-    };
+      }
+    } catch (err) {
+      console.log(err);
+    }
 
-    editor.addEventListener("click", onClick, true);
-    return () => {
-        editor.removeEventListener("click", onClick, true);
-    };
+    const href = anchor.getAttribute("href") || "";
+    if (!href) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+
+    try {
+      const ok = await _confirmFn(href);
+      if (ok) {
+        window.open(href, "_blank", "noopener,noreferrer");
+      }
+    } catch (err) {
+      console.warn("Link guard confirmFn failed", err);
+    }
+  };
+
+  const onPointerEnter = (ev: PointerEvent) => {
+    const target = ev.target as Element | null;
+    if (!target) return;
+    const a = (target.closest && target.closest("a")) as HTMLElement | null;
+    if (!a || !editor.contains(a)) return;
+    applyHover(a);
+  };
+  const onPointerLeave = (ev: PointerEvent) => {
+    const target = ev.target as Element | null;
+    if (!target) return;
+    const a = (target.closest && target.closest("a")) as HTMLElement | null;
+    if (!a || !editor.contains(a)) return;
+    removeHover(a);
+  };
+
+  const onTouchStart = (ev: TouchEvent) => {
+    const t = ev.target as Element | null;
+    if (!t) return;
+    const a = (t.closest && t.closest("a")) as HTMLElement | null;
+    if (!a || !editor.contains(a)) return;
+    a.style.opacity = "0.95";
+    setTimeout(() => {
+      try { a.style.opacity = ""; } catch (e) {}
+    }, 250);
+  };
+  editor.addEventListener("click", onClick, true);
+  editor.addEventListener("pointerenter", onPointerEnter, true);
+  editor.addEventListener("pointerleave", onPointerLeave, true);
+  editor.addEventListener("touchstart", onTouchStart, { passive: true });
+  const cleanup = () => {
+    try {
+      editor.removeEventListener("click", onClick, true);
+      editor.removeEventListener("pointerenter", onPointerEnter, true);
+      editor.removeEventListener("pointerleave", onPointerLeave, true);
+      editor.removeEventListener("touchstart", onTouchStart as EventListener, { passive: true } as any);
+      const anchors = editor.querySelectorAll("a[data-inkspire-hover]");
+      anchors.forEach((a) => removeHover(a as HTMLElement));
+    } catch (err) {
+        console.log(err)
+    }
+  };
+
+  return cleanup;
 }
+
 
 
 export function handlePasteSanitize(
@@ -250,8 +335,6 @@ export function handlePasteSanitize(
     if (!sel || !sel.rangeCount) return;
     const range = sel.getRangeAt(0);
     range.deleteContents();
-
-    // Insert sanitized content
     const temp = document.createElement("div");
     temp.innerHTML = cleaned;
     const frag = document.createDocumentFragment();
@@ -261,7 +344,6 @@ export function handlePasteSanitize(
     }
     range.insertNode(frag);
 
-    // Move caret to end
     sel.removeAllRanges();
     const newRange = document.createRange();
     newRange.selectNodeContents(range.endContainer);

@@ -164,3 +164,11 @@ export const footerStyle: React.CSSProperties = {
   justifyContent: "flex-end",
   marginTop: 16,
 };
+
+export  const HOVER_STYLE = {
+    outline: "2px solid rgba(37,99,235,0.15)",
+    boxShadow: "0 2px 8px rgba(37,99,235,0.08)",
+    transition: "box-shadow 120ms ease, outline-color 120ms ease",
+    borderRadius: "4px",
+    cursor:"pointer"
+  } as Partial<CSSStyleDeclaration>;
